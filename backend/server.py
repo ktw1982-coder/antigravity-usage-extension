@@ -13,7 +13,7 @@ import json
 import urllib.parse
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-# Global Cache for Quota Data containing detailed error types & fallback info
+# Global Cache for Quota Data
 quota_cache = {
     # Gemini models
     "gemini_weekly_percentage": 0.0,
@@ -91,7 +91,7 @@ def parse_section_robust(sec_text):
         
     sec_lower = sec_text.lower()
 
-    # 1. Weekly Limit Parsing
+    # 1. Weekly Limit Parsing (percentage represents REMAINING in CLI)
     weekly_pattern1 = re.compile(
         r'Weekly Limit\s*\n\s*\[[█░#=-]*\]\s*([\d.]+)%\s*\n\s*([^\n]+)', 
         re.MULTILINE | re.IGNORECASE
@@ -269,14 +269,6 @@ def fetch_quota_from_agy():
         raw_usage = usage_bytes.decode('utf-8', errors='ignore')
         clean_usage = clean_ansi(raw_usage)
         
-        try:
-            raw_usage_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "raw_usage.txt")
-            with open(raw_usage_path, "w") as f:
-                f.write(clean_usage)
-                f.flush()
-        except Exception:
-            pass
-        
         parsed = parse_quota(clean_usage)
         if not parsed:
             return {
@@ -327,13 +319,25 @@ def quota_loader_loop():
                     quota_cache["error_type"] = "None"
                     quota_cache["error_message"] = ""
                     
-                    # Record history entry for Trend Chart
+                    # Convert remaining % to ACTUAL USED % for Usage Trend History
+                    # (Remaining % in CLI -> Used % = max(0, 100 - remaining))
+                    g_w_rem = quota_cache.get("gemini_weekly_percentage", 100.0)
+                    g_5_rem = quota_cache.get("gemini_five_hour_percentage", 100.0)
+                    c_w_rem = quota_cache.get("claude_weekly_percentage", 100.0)
+                    c_5_rem = quota_cache.get("claude_five_hour_percentage", 100.0)
+
                     history_entry = {
                         "timestamp": quota_cache["last_updated"],
-                        "gemini_weekly": quota_cache.get("gemini_weekly_percentage", 0.0),
-                        "gemini_five_hour": quota_cache.get("gemini_five_hour_percentage", 0.0),
-                        "claude_weekly": quota_cache.get("claude_weekly_percentage", 0.0),
-                        "claude_five_hour": quota_cache.get("claude_five_hour_percentage", 0.0)
+                        "gemini_weekly_used": round(max(0.0, 100.0 - g_w_rem), 1),
+                        "gemini_five_hour_used": round(max(0.0, 100.0 - g_5_rem), 1),
+                        "claude_weekly_used": round(max(0.0, 100.0 - c_w_rem), 1),
+                        "claude_five_hour_used": round(max(0.0, 100.0 - c_5_rem), 1),
+
+                        # Keep legacy fields for backwards compatibility
+                        "gemini_weekly": round(max(0.0, 100.0 - g_w_rem), 1),
+                        "gemini_five_hour": round(max(0.0, 100.0 - g_5_rem), 1),
+                        "claude_weekly": round(max(0.0, 100.0 - c_w_rem), 1),
+                        "claude_five_hour": round(max(0.0, 100.0 - c_5_rem), 1)
                     }
                     save_history(history_entry)
                     
@@ -476,12 +480,26 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             text-transform: uppercase;
             letter-spacing: 0.05em;
             margin-bottom: 0.5rem;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .card-value-container {
+            display: flex;
+            align-items: baseline;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
         }
 
         .card-value {
             font-size: 2rem;
             font-weight: 700;
-            margin-bottom: 0.5rem;
+        }
+
+        .card-value-label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            font-weight: 500;
         }
 
         .progress-bar-bg {
@@ -529,6 +547,15 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         .chart-title {
             font-size: 1.1rem;
             font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .chart-subtitle {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            font-weight: 400;
         }
 
         .chart-container {
@@ -564,58 +591,89 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         </header>
 
         <div class="grid">
+            <!-- Gemini Weekly -->
             <div class="card gemini">
-                <div class="card-header">Gemini Weekly Quota</div>
-                <div class="card-value" id="g-weekly-val">--%</div>
+                <div class="card-header">
+                    <span>Gemini Weekly</span>
+                    <span>Used</span>
+                </div>
+                <div class="card-value-container">
+                    <div class="card-value" id="g-weekly-val">--%</div>
+                    <div class="card-value-label">Quota Used</div>
+                </div>
                 <div class="progress-bar-bg">
                     <div class="progress-bar-fill" id="g-weekly-bar"></div>
                 </div>
                 <div class="card-footer">
-                    <span id="g-weekly-rem">0% remaining</span>
-                    <span id="g-weekly-ref">Refreshes: --</span>
+                    <span id="g-weekly-rem">-- remaining</span>
+                    <span id="g-weekly-ref">Reset: --</span>
                 </div>
             </div>
 
+            <!-- Gemini 5-Hour -->
             <div class="card gemini">
-                <div class="card-header">Gemini 5-Hour Quota</div>
-                <div class="card-value" id="g-5h-val">--%</div>
+                <div class="card-header">
+                    <span>Gemini 5-Hour</span>
+                    <span>Used</span>
+                </div>
+                <div class="card-value-container">
+                    <div class="card-value" id="g-5h-val">--%</div>
+                    <div class="card-value-label">Quota Used</div>
+                </div>
                 <div class="progress-bar-bg">
                     <div class="progress-bar-fill" id="g-5h-bar"></div>
                 </div>
                 <div class="card-footer">
-                    <span id="g-5h-rem">0% remaining</span>
-                    <span id="g-5h-ref">Refreshes: --</span>
+                    <span id="g-5h-rem">-- remaining</span>
+                    <span id="g-5h-ref">Reset: --</span>
                 </div>
             </div>
 
+            <!-- Claude Weekly -->
             <div class="card claude">
-                <div class="card-header">Claude Weekly Quota</div>
-                <div class="card-value" id="c-weekly-val">--%</div>
+                <div class="card-header">
+                    <span>Claude Weekly</span>
+                    <span>Used</span>
+                </div>
+                <div class="card-value-container">
+                    <div class="card-value" id="c-weekly-val">--%</div>
+                    <div class="card-value-label">Quota Used</div>
+                </div>
                 <div class="progress-bar-bg">
                     <div class="progress-bar-fill" id="c-weekly-bar"></div>
                 </div>
                 <div class="card-footer">
-                    <span id="c-weekly-rem">0% remaining</span>
-                    <span id="c-weekly-ref">Refreshes: --</span>
+                    <span id="c-weekly-rem">-- remaining</span>
+                    <span id="c-weekly-ref">Reset: --</span>
                 </div>
             </div>
 
+            <!-- Claude 5-Hour -->
             <div class="card claude">
-                <div class="card-header">Claude 5-Hour Quota</div>
-                <div class="card-value" id="c-5h-val">--%</div>
+                <div class="card-header">
+                    <span>Claude 5-Hour</span>
+                    <span>Used</span>
+                </div>
+                <div class="card-value-container">
+                    <div class="card-value" id="c-5h-val">--%</div>
+                    <div class="card-value-label">Quota Used</div>
+                </div>
                 <div class="progress-bar-bg">
                     <div class="progress-bar-fill" id="c-5h-bar"></div>
                 </div>
                 <div class="card-footer">
-                    <span id="c-5h-rem">0% remaining</span>
-                    <span id="c-5h-ref">Refreshes: --</span>
+                    <span id="c-5h-rem">-- remaining</span>
+                    <span id="c-5h-ref">Reset: --</span>
                 </div>
             </div>
         </div>
 
         <div class="chart-section">
             <div class="chart-header">
-                <div class="chart-title">📈 24-Hour Usage Trend History</div>
+                <div class="chart-title">
+                    <span>📈 24-Hour Usage Trend History</span>
+                    <span class="chart-subtitle">(Actual Consumption %)</span>
+                </div>
             </div>
             <div class="chart-container">
                 <canvas id="trendChart"></canvas>
@@ -635,30 +693,39 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 const res = await fetch('/usage');
                 const data = await res.json();
 
-                // Gemini
-                const gW = data.gemini_weekly_percentage || 0;
-                document.getElementById('g-weekly-val').textContent = `${gW.toFixed(1)}%`;
-                document.getElementById('g-weekly-bar').style.width = `${gW}%`;
-                document.getElementById('g-weekly-rem').textContent = data.gemini_weekly_remaining || '0% remaining';
+                // Helper: CLI returns REMAINING percentage, calculate USED = max(0, 100 - remaining)
+                const calcUsed = (remPct) => Math.max(0, Math.min(100, 100 - (remPct || 0)));
+
+                // Gemini Weekly
+                const gW_rem = data.gemini_weekly_percentage || 0;
+                const gW_used = calcUsed(gW_rem);
+                document.getElementById('g-weekly-val').textContent = `${gW_used.toFixed(1)}%`;
+                document.getElementById('g-weekly-bar').style.width = `${gW_used}%`;
+                document.getElementById('g-weekly-rem').textContent = data.gemini_weekly_remaining || 'Quota Available';
                 document.getElementById('g-weekly-ref').textContent = `Reset: ${data.gemini_weekly_refresh || '--'}`;
 
-                const g5 = data.gemini_five_hour_percentage || 0;
-                document.getElementById('g-5h-val').textContent = `${g5.toFixed(1)}%`;
-                document.getElementById('g-5h-bar').style.width = `${g5}%`;
-                document.getElementById('g-5h-rem').textContent = data.gemini_five_hour_remaining || '0% remaining';
+                // Gemini 5-Hour
+                const g5_rem = data.gemini_five_hour_percentage || 0;
+                const g5_used = calcUsed(g5_rem);
+                document.getElementById('g-5h-val').textContent = `${g5_used.toFixed(1)}%`;
+                document.getElementById('g-5h-bar').style.width = `${g5_used}%`;
+                document.getElementById('g-5h-rem').textContent = data.gemini_five_hour_remaining || 'Quota Available';
                 document.getElementById('g-5h-ref').textContent = `Reset: ${data.gemini_five_hour_refresh || '--'}`;
 
-                // Claude
-                const cW = data.claude_weekly_percentage || 0;
-                document.getElementById('c-weekly-val').textContent = `${cW.toFixed(1)}%`;
-                document.getElementById('c-weekly-bar').style.width = `${cW}%`;
-                document.getElementById('c-weekly-rem').textContent = data.claude_weekly_remaining || '0% remaining';
+                // Claude Weekly
+                const cW_rem = data.claude_weekly_percentage || 0;
+                const cW_used = calcUsed(cW_rem);
+                document.getElementById('c-weekly-val').textContent = `${cW_used.toFixed(1)}%`;
+                document.getElementById('c-weekly-bar').style.width = `${cW_used}%`;
+                document.getElementById('c-weekly-rem').textContent = data.claude_weekly_remaining || 'Quota Available';
                 document.getElementById('c-weekly-ref').textContent = `Reset: ${data.claude_weekly_refresh || '--'}`;
 
-                const c5 = data.claude_five_hour_percentage || 0;
-                document.getElementById('c-5h-val').textContent = `${c5.toFixed(1)}%`;
-                document.getElementById('c-5h-bar').style.width = `${c5}%`;
-                document.getElementById('c-5h-rem').textContent = data.claude_five_hour_remaining || '0% remaining';
+                // Claude 5-Hour
+                const c5_rem = data.claude_five_hour_percentage || 0;
+                const c5_used = calcUsed(c5_rem);
+                document.getElementById('c-5h-val').textContent = `${c5_used.toFixed(1)}%`;
+                document.getElementById('c-5h-bar').style.width = `${c5_used}%`;
+                document.getElementById('c-5h-rem').textContent = data.claude_five_hour_remaining || 'Quota Available';
                 document.getElementById('c-5h-ref').textContent = `Reset: ${data.claude_five_hour_refresh || '--'}`;
 
                 if (data.last_updated) {
@@ -680,10 +747,11 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                 });
 
-                const gWeeklyData = history.map(h => h.gemini_weekly || 0);
-                const gFiveHourData = history.map(h => h.gemini_five_hour || 0);
-                const cWeeklyData = history.map(h => h.claude_weekly || 0);
-                const cFiveHourData = history.map(h => h.claude_five_hour || 0);
+                // Correctly map ACTUAL USED QUOTA %
+                const gWeeklyUsed = history.map(h => h.gemini_weekly_used !== undefined ? h.gemini_weekly_used : (h.gemini_weekly || 0));
+                const gFiveHourUsed = history.map(h => h.gemini_five_hour_used !== undefined ? h.gemini_five_hour_used : (h.gemini_five_hour || 0));
+                const cWeeklyUsed = history.map(h => h.claude_weekly_used !== undefined ? h.claude_weekly_used : (h.claude_weekly || 0));
+                const cFiveHourUsed = history.map(h => h.claude_five_hour_used !== undefined ? h.claude_five_hour_used : (h.claude_five_hour || 0));
 
                 const ctx = document.getElementById('trendChart').getContext('2d');
 
@@ -697,17 +765,17 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                         labels: labels.length > 0 ? labels : ['Now'],
                         datasets: [
                             {
-                                label: 'Gemini Weekly %',
-                                data: gWeeklyData.length > 0 ? gWeeklyData : [0],
+                                label: 'Gemini Weekly Used %',
+                                data: gWeeklyUsed.length > 0 ? gWeeklyUsed : [0],
                                 borderColor: '#38bdf8',
-                                backgroundColor: 'rgba(56, 189, 248, 0.1)',
+                                backgroundColor: 'rgba(56, 189, 248, 0.15)',
                                 fill: true,
                                 tension: 0.35,
                                 borderWidth: 2.5
                             },
                             {
-                                label: 'Gemini 5-Hour %',
-                                data: gFiveHourData.length > 0 ? gFiveHourData : [0],
+                                label: 'Gemini 5-Hour Used %',
+                                data: gFiveHourUsed.length > 0 ? gFiveHourUsed : [0],
                                 borderColor: '#818cf8',
                                 backgroundColor: 'transparent',
                                 borderDash: [4, 4],
@@ -715,17 +783,17 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                                 borderWidth: 2
                             },
                             {
-                                label: 'Claude Weekly %',
-                                data: cWeeklyData.length > 0 ? cWeeklyData : [0],
+                                label: 'Claude Weekly Used %',
+                                data: cWeeklyUsed.length > 0 ? cWeeklyUsed : [0],
                                 borderColor: '#a855f7',
-                                backgroundColor: 'rgba(168, 85, 247, 0.1)',
+                                backgroundColor: 'rgba(168, 85, 247, 0.15)',
                                 fill: true,
                                 tension: 0.35,
                                 borderWidth: 2.5
                             },
                             {
-                                label: 'Claude 5-Hour %',
-                                data: cFiveHourData.length > 0 ? cFiveHourData : [0],
+                                label: 'Claude 5-Hour Used %',
+                                data: cFiveHourUsed.length > 0 ? cFiveHourUsed : [0],
                                 borderColor: '#ec4899',
                                 backgroundColor: 'transparent',
                                 borderDash: [4, 4],
@@ -749,6 +817,11 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                             y: {
                                 min: 0,
                                 max: 100,
+                                title: {
+                                    display: true,
+                                    text: 'Quota Used (%)',
+                                    color: '#94a3b8'
+                                },
                                 grid: { color: 'rgba(255, 255, 255, 0.05)' },
                                 ticks: {
                                     color: '#94a3b8',
@@ -765,7 +838,12 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                                 titleColor: '#f8fafc',
                                 bodyColor: '#94a3b8',
                                 borderColor: '#334155',
-                                borderWidth: 1
+                                borderWidth: 1,
+                                callbacks: {
+                                    label: function(context) {
+                                        return `${context.dataset.label}: ${context.raw}% Used`;
+                                    }
+                                }
                             }
                         }
                     }
