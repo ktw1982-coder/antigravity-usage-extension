@@ -24,7 +24,7 @@ if [ -f "$RESOURCES_DIR/AppIcon.icns" ]; then
 fi
 
 echo "Compiling Swift source code..."
-swiftc -sdk $(xcrun --show-sdk-path) -framework AppKit "$BASE_DIR/app.swift" -o "$MACOS_DIR/AntigravityMonitor"
+swiftc -sdk $(xcrun --show-sdk-path) -framework AppKit -framework UserNotifications "$BASE_DIR/app.swift" -o "$MACOS_DIR/AntigravityMonitor"
 
 if [ $? -ne 0 ]; then
     echo "❌ Swift compilation failed!"

@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import UserNotifications
 
 struct QuotaData: Codable {
     // Gemini models
@@ -23,7 +24,7 @@ struct QuotaData: Codable {
     let error_message: String?
 }
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     var statusItem: NSStatusItem!
     var menu: NSMenu!
     
@@ -42,6 +43,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     var updatedMenuItem: NSMenuItem!
     var launchAtLoginMenuItem: NSMenuItem!
+    var preferencesMenuItem: NSMenuItem!
+    
+    // Preferences Window
+    var preferencesWindow: NSWindow?
+    var enableNotificationsButton: NSButton?
     
     // Reference to the backend python process
     var pythonProcess: Process?
@@ -49,7 +55,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // Flag to control quick retries during initialization or error states
     var isQuickRetrying = false
     
+    // Notification tracking flags to prevent duplicate alerts
+    var notified80 = false
+    var notified90 = false
+    var enableNotifications = true
+    
+    // Timer
+    var pollingTimer: Timer?
+    var currentInterval: TimeInterval = 60.0
+    
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Request Notification Permissions
+        setupNotifications()
+        
         // 1. Start the backend python server (packaged in Resources)
         startBackendServer()
         
@@ -111,6 +129,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         menu.addItem(NSMenuItem.separator())
         
+        // Preferences Window Item
+        preferencesMenuItem = NSMenuItem(title: "Preferences...", action: #selector(openPreferences), keyEquivalent: ",")
+        preferencesMenuItem.target = self
+        menu.addItem(preferencesMenuItem)
+        
         // Launch at Login Toggle
         launchAtLoginMenuItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
         launchAtLoginMenuItem.target = self
@@ -129,12 +152,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         statusItem.menu = menu
         
-        // Timer for polling every 60 seconds
-        Timer.scheduledTimer(withTimeInterval: 60.0, repeats: true) { _ in
-            self.fetchQuota()
-        }
+        // Load saved preferences
+        loadPreferences()
         
-        // Start immediate fetch after launch (0.5s instead of 2.5s) to trigger quick polling loop
+        // Start Polling Timer
+        restartTimer()
+        
+        // Start immediate fetch after launch
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             self.fetchQuota()
         }
@@ -144,8 +168,140 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         stopBackendServer()
     }
     
+    // -- Notifications Setup --
+    func setupNotifications() {
+        let center = UNUserNotificationCenter.current()
+        center.delegate = self
+        center.requestAuthorization(options: [.alert, .sound]) { granted, error in
+            if let error = error {
+                print("Notification permission error: \(error)")
+            }
+        }
+    }
+    
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .sound])
+    }
+    
+    func sendQuotaNotification(title: String, body: String) {
+        guard enableNotifications else { return }
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("Failed to deliver notification: \(error)")
+            }
+        }
+    }
+    
+    func checkNotifications(quota: QuotaData) {
+        let geminiPct = quota.gemini_weekly_percentage ?? 0.0
+        let claudePct = quota.claude_weekly_percentage ?? 0.0
+        let maxPct = max(geminiPct, claudePct)
+        
+        if maxPct >= 90.0 {
+            if !notified90 {
+                sendQuotaNotification(
+                    title: "⚠️ High Quota Usage Alert (90%+)",
+                    body: "Your Antigravity model quota usage has reached \(Int(maxPct))%! Consider pacing your requests."
+                )
+                notified90 = true
+                notified80 = true
+            }
+        } else if maxPct >= 80.0 {
+            if !notified80 {
+                sendQuotaNotification(
+                    title: "🔔 Quota Warning (80%+)",
+                    body: "Your Antigravity quota usage is now at \(Int(maxPct))%."
+                )
+                notified80 = true
+            }
+        } else {
+            notified80 = false
+            notified90 = false
+        }
+    }
+    
+    // -- Preferences Window --
+    @objc func openPreferences() {
+        if let window = preferencesWindow {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 340, height: 180),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        window.center()
+        window.title = "Antigravity Monitor Preferences"
+        window.isReleasedWhenClosed = false
+        
+        let contentView = NSView(frame: window.contentRect(forFrameRect: window.frame))
+        
+        // Title Label
+        let titleLabel = NSTextField(labelWithString: "Antigravity Monitor Settings")
+        titleLabel.font = NSFont.boldSystemFont(ofSize: 14)
+        titleLabel.frame = NSRect(x: 20, y: 135, width: 300, height: 20)
+        contentView.addSubview(titleLabel)
+        
+        // Enable Notifications Checkbox
+        let notifyBtn = NSButton(checkboxWithTitle: "Enable Push Notifications (at 80% & 90% quota)", target: self, action: #selector(toggleNotificationsCheckbox(_:)))
+        notifyBtn.frame = NSRect(x: 20, y: 95, width: 300, height: 25)
+        notifyBtn.state = enableNotifications ? .on : .off
+        self.enableNotificationsButton = notifyBtn
+        contentView.addSubview(notifyBtn)
+        
+        // Info Label
+        let infoLabel = NSTextField(labelWithString: "Notifications will alert you when model quota is almost depleted.")
+        infoLabel.font = NSFont.systemFont(ofSize: 11)
+        infoLabel.textColor = .secondaryLabelColor
+        infoLabel.frame = NSRect(x: 20, y: 70, width: 300, height: 20)
+        contentView.addSubview(infoLabel)
+        
+        // Close Button
+        let closeBtn = NSButton(title: "Save & Close", target: self, action: #selector(closePreferences))
+        closeBtn.frame = NSRect(x: 210, y: 20, width: 110, height: 32)
+        closeBtn.bezelStyle = .rounded
+        contentView.addSubview(closeBtn)
+        
+        window.contentView = contentView
+        self.preferencesWindow = window
+        
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+    
+    @objc func toggleNotificationsCheckbox(_ sender: NSButton) {
+        enableNotifications = (sender.state == .on)
+        UserDefaults.standard.set(enableNotifications, forKey: "enableNotifications")
+    }
+    
+    @objc func closePreferences() {
+        preferencesWindow?.close()
+    }
+    
+    func loadPreferences() {
+        if UserDefaults.standard.object(forKey: "enableNotifications") != nil {
+            enableNotifications = UserDefaults.standard.bool(forKey: "enableNotifications")
+        }
+    }
+    
+    func restartTimer() {
+        pollingTimer?.invalidate()
+        pollingTimer = Timer.scheduledTimer(withTimeInterval: currentInterval, repeats: true) { [weak self] _ in
+            self?.fetchQuota()
+        }
+    }
+    
     func startBackendServer() {
-        // Retrieve the server.py path dynamically from the App Bundle Resources folder
         guard let scriptPath = Bundle.main.path(forResource: "server", ofType: "py") else {
             print("❌ Error: server.py not found in App Bundle Resources!")
             DispatchQueue.main.async {
@@ -158,8 +314,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         process.executableURL = URL(fileURLWithPath: "/bin/zsh")
         
         let myPid = ProcessInfo.processInfo.processIdentifier
-        
-        // Wrap path in quotes to support folders with spaces
         let command = "python3 \"\(scriptPath)\" 8484 \(myPid)"
         process.arguments = ["-c", command]
         
@@ -219,9 +373,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         self.updateUI(with: quota)
                         self.scheduleQuickRetry()
                     } else {
-                        // Success: Stop quick retry loop and update UI
                         self.isQuickRetrying = false
                         self.updateUI(with: quota)
+                        self.checkNotifications(quota: quota)
                     }
                 } catch {
                     self.updateUIWithError("JSON Parsing failed")
@@ -236,7 +390,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard !isQuickRetrying else { return }
         isQuickRetrying = true
         
-        // Retry fetch after 3 seconds for fast startup responsiveness
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
             guard let self = self else { return }
             if self.isQuickRetrying {
@@ -261,7 +414,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         
-        // 1. Status Bar Title
         let geminiWeeklyPct = quota.gemini_weekly_percentage ?? 0.0
         if let button = statusItem.button {
             if quota.status == "Initializing" {
@@ -271,7 +423,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         
-        // 2. Gemini Quota Items
         let geminiWeeklyRem = quota.gemini_weekly_remaining ?? "--% remaining"
         let geminiWeeklyRef = quota.gemini_weekly_refresh ?? "--"
         geminiWeeklyMenuItem.title = "Weekly: \(geminiWeeklyRem) (Refreshes in \(geminiWeeklyRef))"
@@ -282,7 +433,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         geminiFiveHourMenuItem.title = "5-Hour: \(geminiFiveHourRem) (Refreshes in \(geminiFiveHourRef))"
         geminiFiveHourBarMenuItem.title = makeProgressBar(remainingPercent: quota.gemini_five_hour_percentage)
         
-        // 3. Claude/GPT Quota Items
         let claudeWeeklyRem = quota.claude_weekly_remaining ?? "--% remaining"
         let claudeWeeklyRef = quota.claude_weekly_refresh ?? "--"
         claudeWeeklyMenuItem.title = "Weekly: \(claudeWeeklyRem) (Refreshes in \(claudeWeeklyRef))"
@@ -293,7 +443,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         claudeFiveHourMenuItem.title = "5-Hour: \(claudeFiveHourRem) (Refreshes in \(claudeFiveHourRef))"
         claudeFiveHourBarMenuItem.title = makeProgressBar(remainingPercent: quota.claude_five_hour_percentage)
         
-        // 4. Last Update Time
         if let lastUpdatedTime = quota.last_updated, lastUpdatedTime > 0 {
             let date = Date(timeIntervalSince1970: TimeInterval(lastUpdatedTime))
             let formatter = DateFormatter()
