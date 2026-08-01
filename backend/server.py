@@ -54,19 +54,24 @@ def clean_ansi(text):
 def parse_section_robust(sec_text):
     sec_data = {
         "weekly_percentage": 0.0,
-        "weekly_remaining": "0% remaining",
-        "weekly_refresh": "Unknown",
+        "weekly_remaining": "Quota Available",
+        "weekly_refresh": "--",
         "five_hour_percentage": 0.0,
-        "five_hour_remaining": "0% remaining",
-        "five_hour_refresh": "Unknown"
+        "five_hour_remaining": "Quota Available",
+        "five_hour_refresh": "--"
     }
     
-    # Primary Regex Strategy: Multiline visual block
+    if not sec_text or not sec_text.strip():
+        return sec_data
+        
+    # Check for Unlimited / Enterprise / No Limit tier indicators
+    sec_lower = sec_text.lower()
+
+    # 1. Weekly Limit Parsing
     weekly_pattern1 = re.compile(
-        r'Weekly Limit\s*\n\s*\[[█░#=-]+\]\s*([\d.]+)%\s*\n\s*([^\n]+)', 
+        r'Weekly Limit\s*\n\s*\[[█░#=-]*\]\s*([\d.]+)%\s*\n\s*([^\n]+)', 
         re.MULTILINE | re.IGNORECASE
     )
-    # Fallback Strategy: Generic percentage line after 'Weekly'
     weekly_pattern2 = re.compile(
         r'Weekly[^\n]*?([\d.]+)%\s*\n?\s*([^\n]*)', 
         re.IGNORECASE
@@ -76,7 +81,7 @@ def parse_section_robust(sec_text):
     if weekly_match:
         try:
             sec_data["weekly_percentage"] = float(weekly_match.group(1))
-        except (ValueError, IndexingError):
+        except (ValueError, IndexError):
             pass
         
         if len(weekly_match.groups()) >= 2:
@@ -89,10 +94,13 @@ def parse_section_robust(sec_text):
             else:
                 sec_data["weekly_remaining"] = details if details else "Quota Available"
                 sec_data["weekly_refresh"] = "--"
+    elif "unlimited" in sec_lower or "no limit" in sec_lower:
+        sec_data["weekly_remaining"] = "Unlimited Tier"
+        sec_data["weekly_refresh"] = "N/A"
 
-    # Five Hour Limit Parsing
+    # 2. Five Hour Limit Parsing
     five_hour_pattern1 = re.compile(
-        r'Five Hour Limit\s*\n\s*\[[█░#=-]+\]\s*([\d.]+)%\s*\n\s*([^\n]+)', 
+        r'Five Hour Limit\s*\n\s*\[[█░#=-]*\]\s*([\d.]+)%\s*\n\s*([^\n]+)', 
         re.MULTILINE | re.IGNORECASE
     )
     five_hour_pattern2 = re.compile(
@@ -104,7 +112,7 @@ def parse_section_robust(sec_text):
     if five_hour_match:
         try:
             sec_data["five_hour_percentage"] = float(five_hour_match.group(1))
-        except ValueError:
+        except (ValueError, IndexError):
             pass
         
         if len(five_hour_match.groups()) >= 2:
@@ -117,13 +125,15 @@ def parse_section_robust(sec_text):
             else:
                 sec_data["five_hour_remaining"] = details if details else "Quota Available"
                 sec_data["five_hour_refresh"] = "--"
+    elif "unlimited" in sec_lower or "no limit" in sec_lower:
+        sec_data["five_hour_remaining"] = "Unlimited Tier"
+        sec_data["five_hour_refresh"] = "N/A"
 
     return sec_data
 
 def parse_quota(text):
     parsed = {}
     
-    # Split text into Gemini and Claude/GPT sections
     gemini_sec = ""
     claude_sec = ""
     
@@ -152,7 +162,6 @@ def fetch_quota_from_agy():
     
     cli_found = True
     if not os.path.exists(agy_path):
-        # Fallback to system PATH
         import shutil
         found_in_path = shutil.which("agy")
         if found_in_path:
