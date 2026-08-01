@@ -299,8 +299,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         
         let dPopUp = NSPopUpButton(frame: NSRect(x: 180, y: 102, width: 180, height: 25), pullsDown: false)
         dPopUp.addItems(withTitles: [
-            "Remaining Quota % (남은 양)",
-            "Used Quota % (사용한 양)"
+            "Remaining Quota %",
+            "Used Quota %"
         ])
         dPopUp.selectItem(at: selectedDisplayModeIndex)
         dPopUp.target = self
@@ -562,6 +562,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         if let lastUpdatedTime = quota.last_updated, lastUpdatedTime > 0 {
             let date = Date(timeIntervalSince1970: TimeInterval(lastUpdatedTime))
             let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
             formatter.dateFormat = "hh:mm:ss a"
             updatedMenuItem.title = "Last Update: \(formatter.string(from: date))"
         } else {
