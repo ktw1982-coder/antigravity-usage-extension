@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "Antigravity Usage Monitor",
+  "version": "1.0",
+  "description": "Monitors your local Google Antigravity token usage and quota status.",
+  "permissions": [],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}

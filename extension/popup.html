@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>Antigravity Quota Monitor</title>
+  <link rel="stylesheet" href="popup.css">
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="logo-area">
+        <span class="logo-dot"></span>
+        <h1>Antigravity</h1>
+      </div>
+      <div id="status-badge" class="badge ok">Connecting</div>
+    </header>
+
+    <main id="main-content">
+      <!-- Weekly Card -->
+      <div class="card animate-fade-in">
+        <div class="card-header">
+          <h2>Weekly Quota</h2>
+          <span id="weekly-pct" class="percentage">--%</span>
+        </div>
+        <div class="progress-container">
+          <div id="weekly-bar" class="progress-bar" style="width: 0%"></div>
+        </div>
+        <div class="card-footer">
+          <span id="weekly-rem" class="remaining">--% remaining</span>
+          <span id="weekly-ref" class="refresh">Refreshes in --</span>
+        </div>
+      </div>
+
+      <!-- 5-Hour Card -->
+      <div class="card animate-fade-in delay-1">
+        <div class="card-header">
+          <h2>5-Hour Quota</h2>
+          <span id="five-hour-pct" class="percentage">--%</span>
+        </div>
+        <div class="progress-container">
+          <div id="five-hour-bar" class="progress-bar" style="width: 0%"></div>
+        </div>
+        <div class="card-footer">
+          <span id="five-hour-rem" class="remaining">--% remaining</span>
+          <span id="five-hour-ref" class="refresh">Refreshes in --</span>
+        </div>
+      </div>
+    </main>
+
+    <!-- Error state layout -->
+    <div id="error-content" class="error-container hidden">
+      <div class="error-icon">⚠️</div>
+      <h3>API 서버 연결 실패</h3>
+      <p>로컬 백엔드 API 서버가 구동 중인지 확인해 주세요. 아래 명령어로 실행할 수 있습니다.</p>
+      <div class="code-block">
+        <code>python3 backend/server.py</code>
+      </div>
+      <button id="retry-btn" class="btn">다시 연결 시도</button>
+    </div>
+
+    <footer>
+      <span id="last-updated">Last update: --</span>
+      <button id="refresh-btn" class="refresh-icon-btn" title="새로고침">
+        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" class="css-i6dzq1"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+      </button>
+    </footer>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

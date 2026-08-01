@@ -1,0 +1,24 @@
+# System & OS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Build & Binary Artifacts
+menubar/AntigravityMonitor.app
+menubar/AntigravityMonitor
+menubar/AppIcon.iconset
+
+# Logs & Scraped/Temporary files
+*.log
+backend/watcher.log
+backend/raw_usage.txt
+backend/seoul_yeyak_source.html
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+env/
+venv/
