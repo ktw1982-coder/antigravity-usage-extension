@@ -22,6 +22,9 @@ struct QuotaData: Codable {
     let last_updated: Int?
     let status: String?
     let error_message: String?
+    let error_type: String?
+    let cli_found: Bool?
+    let cli_path: String?
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
@@ -65,19 +68,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     var currentInterval: TimeInterval = 60.0
     
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Request Notification Permissions
         setupNotifications()
-        
-        // 1. Start the backend python server (packaged in Resources)
         startBackendServer()
         
-        // 2. Create the Status Bar Item
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
             button.title = "AG: --%"
         }
         
-        // Setup dropdown Menu list
         menu = NSMenu()
         
         // -- Gemini Group --
@@ -152,13 +150,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         
         statusItem.menu = menu
         
-        // Load saved preferences
         loadPreferences()
-        
-        // Start Polling Timer
         restartTimer()
         
-        // Start immediate fetch after launch
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             self.fetchQuota()
         }
@@ -246,27 +240,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         
         let contentView = NSView(frame: window.contentRect(forFrameRect: window.frame))
         
-        // Title Label
         let titleLabel = NSTextField(labelWithString: "Antigravity Monitor Settings")
         titleLabel.font = NSFont.boldSystemFont(ofSize: 14)
         titleLabel.frame = NSRect(x: 20, y: 135, width: 300, height: 20)
         contentView.addSubview(titleLabel)
         
-        // Enable Notifications Checkbox
         let notifyBtn = NSButton(checkboxWithTitle: "Enable Push Notifications (at 80% & 90% quota)", target: self, action: #selector(toggleNotificationsCheckbox(_:)))
         notifyBtn.frame = NSRect(x: 20, y: 95, width: 300, height: 25)
         notifyBtn.state = enableNotifications ? .on : .off
         self.enableNotificationsButton = notifyBtn
         contentView.addSubview(notifyBtn)
         
-        // Info Label
         let infoLabel = NSTextField(labelWithString: "Notifications will alert you when model quota is almost depleted.")
         infoLabel.font = NSFont.systemFont(ofSize: 11)
         infoLabel.textColor = .secondaryLabelColor
         infoLabel.frame = NSRect(x: 20, y: 70, width: 300, height: 20)
         contentView.addSubview(infoLabel)
         
-        // Close Button
         let closeBtn = NSButton(title: "Save & Close", target: self, action: #selector(closePreferences))
         closeBtn.frame = NSRect(x: 210, y: 20, width: 110, height: 32)
         closeBtn.bezelStyle = .rounded
@@ -372,6 +362,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                     if quota.status == "Initializing" {
                         self.updateUI(with: quota)
                         self.scheduleQuickRetry()
+                    } else if quota.status == "Error" {
+                        let errType = quota.error_type ?? "UNKNOWN"
+                        let msg = quota.error_message ?? "Scraper Error"
+                        self.updateUIWithError("[\(errType)] \(msg)")
+                        self.scheduleQuickRetry()
                     } else {
                         self.isQuickRetrying = false
                         self.updateUI(with: quota)
@@ -409,11 +404,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
     
     func updateUI(with quota: QuotaData) {
-        if quota.status == "Error" {
-            updateUIWithError(quota.error_message ?? "Internal scraper error")
-            return
-        }
-        
         let geminiWeeklyPct = quota.gemini_weekly_percentage ?? 0.0
         if let button = statusItem.button {
             if quota.status == "Initializing" {

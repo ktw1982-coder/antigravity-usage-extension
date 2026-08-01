@@ -12,7 +12,7 @@ import threading
 import json
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-# Global Cache for Quota Data containing both Gemini and Claude/GPT models
+# Global Cache for Quota Data containing detailed error types & fallback info
 quota_cache = {
     # Gemini models
     "gemini_weekly_percentage": 0.0,
@@ -32,18 +32,93 @@ quota_cache = {
     
     "last_updated": 0,
     "status": "Initializing",
-    "error_message": ""
+    "error_message": "",
+    "error_type": "None",
+    "cli_found": True,
+    "cli_path": ""
 }
 
 cache_lock = threading.Lock()
 
 def set_pty_size(master_fd, rows, cols):
-    s = struct.pack('HHHH', rows, cols, 0, 0)
-    fcntl.ioctl(master_fd, termios.TIOCSWINSZ, s)
+    try:
+        s = struct.pack('HHHH', rows, cols, 0, 0)
+        fcntl.ioctl(master_fd, termios.TIOCSWINSZ, s)
+    except Exception:
+        pass
 
 def clean_ansi(text):
     ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
     return ansi_escape.sub('', text)
+
+def parse_section_robust(sec_text):
+    sec_data = {
+        "weekly_percentage": 0.0,
+        "weekly_remaining": "0% remaining",
+        "weekly_refresh": "Unknown",
+        "five_hour_percentage": 0.0,
+        "five_hour_remaining": "0% remaining",
+        "five_hour_refresh": "Unknown"
+    }
+    
+    # Primary Regex Strategy: Multiline visual block
+    weekly_pattern1 = re.compile(
+        r'Weekly Limit\s*\n\s*\[[█░#=-]+\]\s*([\d.]+)%\s*\n\s*([^\n]+)', 
+        re.MULTILINE | re.IGNORECASE
+    )
+    # Fallback Strategy: Generic percentage line after 'Weekly'
+    weekly_pattern2 = re.compile(
+        r'Weekly[^\n]*?([\d.]+)%\s*\n?\s*([^\n]*)', 
+        re.IGNORECASE
+    )
+    
+    weekly_match = weekly_pattern1.search(sec_text) or weekly_pattern2.search(sec_text)
+    if weekly_match:
+        try:
+            sec_data["weekly_percentage"] = float(weekly_match.group(1))
+        except (ValueError, IndexingError):
+            pass
+        
+        if len(weekly_match.groups()) >= 2:
+            details = weekly_match.group(2).strip()
+            if "remaining" in details.lower() and "refreshes in" in details.lower():
+                parts = details.split('·')
+                sec_data["weekly_remaining"] = parts[0].strip()
+                if len(parts) > 1:
+                    sec_data["weekly_refresh"] = parts[1].replace('Refreshes in', '').replace('refreshes in', '').strip()
+            else:
+                sec_data["weekly_remaining"] = details if details else "Quota Available"
+                sec_data["weekly_refresh"] = "--"
+
+    # Five Hour Limit Parsing
+    five_hour_pattern1 = re.compile(
+        r'Five Hour Limit\s*\n\s*\[[█░#=-]+\]\s*([\d.]+)%\s*\n\s*([^\n]+)', 
+        re.MULTILINE | re.IGNORECASE
+    )
+    five_hour_pattern2 = re.compile(
+        r'Five Hour[^\n]*?([\d.]+)%\s*\n?\s*([^\n]*)', 
+        re.IGNORECASE
+    )
+    
+    five_hour_match = five_hour_pattern1.search(sec_text) or five_hour_pattern2.search(sec_text)
+    if five_hour_match:
+        try:
+            sec_data["five_hour_percentage"] = float(five_hour_match.group(1))
+        except ValueError:
+            pass
+        
+        if len(five_hour_match.groups()) >= 2:
+            details = five_hour_match.group(2).strip()
+            if "remaining" in details.lower() and "refreshes in" in details.lower():
+                parts = details.split('·')
+                sec_data["five_hour_remaining"] = parts[0].strip()
+                if len(parts) > 1:
+                    sec_data["five_hour_refresh"] = parts[1].replace('Refreshes in', '').replace('refreshes in', '').strip()
+            else:
+                sec_data["five_hour_remaining"] = details if details else "Quota Available"
+                sec_data["five_hour_refresh"] = "--"
+
+    return sec_data
 
 def parse_quota(text):
     parsed = {}
@@ -52,67 +127,17 @@ def parse_quota(text):
     gemini_sec = ""
     claude_sec = ""
     
-    parts = text.split("CLAUDE AND GPT MODELS")
+    parts = re.split(r'CLAUDE AND GPT MODELS', text, flags=re.IGNORECASE)
     if len(parts) > 0:
         gemini_sec = parts[0]
     if len(parts) > 1:
         claude_sec = parts[1]
         
-    def parse_section(sec_text):
-        sec_data = {
-            "weekly_percentage": 0.0,
-            "weekly_remaining": "0% remaining",
-            "weekly_refresh": "Unknown",
-            "five_hour_percentage": 0.0,
-            "five_hour_remaining": "0% remaining",
-            "five_hour_refresh": "Unknown"
-        }
-        
-        # Weekly Limit Parsing (Generalized to match any info string below percentage)
-        weekly_pattern = re.compile(
-            r'Weekly Limit\s*\n\s*\[[█░]+\]\s*([\d.]+)%\s*\n\s*([^\n]+)', 
-            re.MULTILINE
-        )
-        weekly_match = weekly_pattern.search(sec_text)
-        if weekly_match:
-            sec_data["weekly_percentage"] = float(weekly_match.group(1))
-            details = weekly_match.group(2).strip()
-            if "remaining" in details and "Refreshes in" in details:
-                parts = details.split('·')
-                sec_data["weekly_remaining"] = parts[0].strip()
-                if len(parts) > 1:
-                    sec_data["weekly_refresh"] = parts[1].replace('Refreshes in', '').strip()
-            else:
-                sec_data["weekly_remaining"] = details  # e.g., "Quota available" or other state
-                sec_data["weekly_refresh"] = "--"
-                
-        # Five Hour Limit Parsing (Generalized to match any info string below percentage)
-        five_hour_pattern = re.compile(
-            r'Five Hour Limit\s*\n\s*\[[█░]+\]\s*([\d.]+)%\s*\n\s*([^\n]+)', 
-            re.MULTILINE
-        )
-        five_hour_match = five_hour_pattern.search(sec_text)
-        if five_hour_match:
-            sec_data["five_hour_percentage"] = float(five_hour_match.group(1))
-            details = five_hour_match.group(2).strip()
-            if "remaining" in details and "Refreshes in" in details:
-                parts = details.split('·')
-                sec_data["five_hour_remaining"] = parts[0].strip()
-                if len(parts) > 1:
-                    sec_data["five_hour_refresh"] = parts[1].replace('Refreshes in', '').strip()
-            else:
-                sec_data["five_hour_remaining"] = details  # e.g., "Quota available" or other state
-                sec_data["five_hour_refresh"] = "--"
-                
-        return sec_data
-
-    # Parse Gemini section
-    gemini_data = parse_section(gemini_sec)
+    gemini_data = parse_section_robust(gemini_sec)
     for k, v in gemini_data.items():
         parsed[f"gemini_{k}"] = v
         
-    # Parse Claude/GPT section
-    claude_data = parse_section(claude_sec)
+    claude_data = parse_section_robust(claude_sec)
     for k, v in claude_data.items():
         parsed[f"claude_{k}"] = v
         
@@ -124,21 +149,50 @@ def fetch_quota_from_agy():
     
     home_dir = os.path.expanduser("~")
     agy_path = os.path.join(home_dir, ".local/bin/agy")
+    
+    cli_found = True
     if not os.path.exists(agy_path):
-        agy_path = "agy"
+        # Fallback to system PATH
+        import shutil
+        found_in_path = shutil.which("agy")
+        if found_in_path:
+            agy_path = found_in_path
+        else:
+            cli_found = False
+
+    if not cli_found:
+        os.close(slave)
+        os.close(master)
+        return {
+            "error_type": "CLI_NOT_FOUND",
+            "error_message": "agy executable not found at ~/.local/bin/agy or PATH",
+            "cli_found": False,
+            "cli_path": agy_path
+        }
         
     env = os.environ.copy()
     env['TERM'] = 'xterm-256color'
     
-    proc = subprocess.Popen(
-        [agy_path, "--continue"],
-        stdin=slave,
-        stdout=slave,
-        stderr=slave,
-        env=env,
-        cwd=home_dir,
-        close_fds=True
-    )
+    try:
+        proc = subprocess.Popen(
+            [agy_path, "--continue"],
+            stdin=slave,
+            stdout=slave,
+            stderr=slave,
+            env=env,
+            cwd=home_dir,
+            close_fds=True
+        )
+    except Exception as e:
+        os.close(slave)
+        os.close(master)
+        return {
+            "error_type": "EXEC_FAILED",
+            "error_message": f"Failed to spawn agy process: {e}",
+            "cli_found": True,
+            "cli_path": agy_path
+        }
+        
     os.close(slave)
     
     def read_available(timeout=5):
@@ -162,14 +216,19 @@ def fetch_quota_from_agy():
         startup_bytes = read_available(3)
         clean_startup = clean_ansi(startup_bytes.decode('utf-8', errors='ignore'))
         
-        if "trust the contents" in clean_startup or "trust this folder" in clean_startup:
+        if "trust the contents" in clean_startup.lower() or "trust this folder" in clean_startup.lower():
             os.write(master, b"\r\n")
             time.sleep(1)
             read_available(2)
             
         poll = proc.poll()
         if poll is not None:
-            raise Exception(f"agy process exited early with code {poll}")
+            return {
+                "error_type": "PROCESS_EXITED",
+                "error_message": f"agy exited early with code {poll}",
+                "cli_found": True,
+                "cli_path": agy_path
+            }
             
         os.write(master, b"/usage\r\n")
         time.sleep(4)
@@ -183,25 +242,36 @@ def fetch_quota_from_agy():
             with open(raw_usage_path, "w") as f:
                 f.write(clean_usage)
                 f.flush()
-        except:
+        except Exception:
             pass
         
         parsed = parse_quota(clean_usage)
         if not parsed:
-            raise Exception("Failed to parse quota information from output.")
+            return {
+                "error_type": "PARSING_FAILED",
+                "error_message": "Could not parse quota structure from agy output",
+                "cli_found": True,
+                "cli_path": agy_path
+            }
             
         os.write(master, b"/exit\r\n")
         time.sleep(0.5)
         
+        parsed["error_type"] = "None"
+        parsed["cli_found"] = True
+        parsed["cli_path"] = agy_path
         return parsed
         
     finally:
         try:
             proc.terminate()
             proc.wait(timeout=1)
-        except:
+        except Exception:
             pass
-        os.close(master)
+        try:
+            os.close(master)
+        except Exception:
+            pass
 
 def quota_loader_loop():
     global quota_cache
@@ -212,16 +282,25 @@ def quota_loader_loop():
             data = fetch_quota_from_agy()
             
             with cache_lock:
-                quota_cache.update(data)
-                quota_cache["last_updated"] = int(time.time())
-                quota_cache["status"] = "OK"
-                quota_cache["error_message"] = ""
-            print("Quota cache successfully updated.", flush=True)
+                if data.get("error_type", "None") != "None":
+                    quota_cache["status"] = "Error"
+                    quota_cache["error_type"] = data.get("error_type", "UNKNOWN_ERROR")
+                    quota_cache["error_message"] = data.get("error_message", "Scraper encountered an error")
+                    quota_cache["cli_found"] = data.get("cli_found", True)
+                    quota_cache["cli_path"] = data.get("cli_path", "")
+                else:
+                    quota_cache.update(data)
+                    quota_cache["last_updated"] = int(time.time())
+                    quota_cache["status"] = "OK"
+                    quota_cache["error_type"] = "None"
+                    quota_cache["error_message"] = ""
+            print(f"Quota cache status: {quota_cache['status']}", flush=True)
             
         except Exception as e:
             print(f"Error loading quota: {e}", flush=True)
             with cache_lock:
                 quota_cache["status"] = "Error"
+                quota_cache["error_type"] = "UNHANDLED_EXCEPTION"
                 quota_cache["error_message"] = str(e)
                 
         time.sleep(300)
@@ -260,7 +339,7 @@ def parent_watcher(parent_pid):
         with open(log_file_path, "w") as f:
             f.write(f"Watcher thread started. Target parent PID: {parent_pid}\n")
             f.flush()
-    except:
+    except Exception:
         pass
 
     while True:
@@ -271,7 +350,7 @@ def parent_watcher(parent_pid):
                 with open(log_file_path, "a") as f:
                     f.write(f"Ping parent {parent_pid}: Dead. Terminating process...\n")
                     f.flush()
-            except:
+            except Exception:
                 pass
             os._exit(0)
         time.sleep(2)
@@ -281,7 +360,6 @@ def run_server(port=8484, parent_pid=None):
         watcher_thread = threading.Thread(target=parent_watcher, args=(parent_pid,), daemon=True)
         watcher_thread.start()
 
-    # Start the background status scraper thread
     loader_thread = threading.Thread(target=quota_loader_loop, daemon=True)
     loader_thread.start()
     
