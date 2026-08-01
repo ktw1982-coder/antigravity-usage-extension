@@ -64,6 +64,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     var notified90 = false
     var enableNotifications = true
     
+    // Status Bar Preferences
+    var selectedMetricIndex: Int = 0 // 0: Gemini Weekly, 1: Gemini 5-Hour, 2: Claude Weekly, 3: Claude 5-Hour, 4: Most Critical
+    var selectedDisplayModeIndex: Int = 0 // 0: Remaining %, 1: Used %
+    var metricPopUp: NSPopUpButton?
+    var displayModePopUp: NSPopUpButton?
+    var lastFetchedQuota: QuotaData?
+    
     // Timer
     var pollingTimer: Timer?
     var currentInterval: TimeInterval = 60.0
@@ -241,7 +248,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
         
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 340, height: 180),
+            contentRect: NSRect(x: 0, y: 0, width: 380, height: 260),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -254,23 +261,61 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         
         let titleLabel = NSTextField(labelWithString: "Antigravity Monitor Settings")
         titleLabel.font = NSFont.boldSystemFont(ofSize: 14)
-        titleLabel.frame = NSRect(x: 20, y: 135, width: 300, height: 20)
+        titleLabel.frame = NSRect(x: 20, y: 220, width: 340, height: 20)
         contentView.addSubview(titleLabel)
         
+        // Push Notifications Checkbox
         let notifyBtn = NSButton(checkboxWithTitle: "Enable Push Notifications (at 80% & 90% quota)", target: self, action: #selector(toggleNotificationsCheckbox(_:)))
-        notifyBtn.frame = NSRect(x: 20, y: 95, width: 300, height: 25)
+        notifyBtn.frame = NSRect(x: 20, y: 185, width: 340, height: 25)
         notifyBtn.state = enableNotifications ? .on : .off
         self.enableNotificationsButton = notifyBtn
         contentView.addSubview(notifyBtn)
         
-        let infoLabel = NSTextField(labelWithString: "Notifications will alert you when model quota is almost depleted.")
+        // Status Bar Display Metric Selection
+        let metricLabel = NSTextField(labelWithString: "Status Bar Display Metric:")
+        metricLabel.font = NSFont.systemFont(ofSize: 12)
+        metricLabel.frame = NSRect(x: 20, y: 145, width: 160, height: 20)
+        contentView.addSubview(metricLabel)
+        
+        let mPopUp = NSPopUpButton(frame: NSRect(x: 180, y: 142, width: 180, height: 25), pullsDown: false)
+        mPopUp.addItems(withTitles: [
+            "Gemini Weekly",
+            "Gemini 5-Hour",
+            "Claude Weekly",
+            "Claude 5-Hour",
+            "Most Critical (Max Used)"
+        ])
+        mPopUp.selectItem(at: selectedMetricIndex)
+        mPopUp.target = self
+        mPopUp.action = #selector(metricPopUpChanged(_:))
+        self.metricPopUp = mPopUp
+        contentView.addSubview(mPopUp)
+        
+        // Display Value Type Selection (Remaining vs Used)
+        let modeLabel = NSTextField(labelWithString: "Display Value Type:")
+        modeLabel.font = NSFont.systemFont(ofSize: 12)
+        modeLabel.frame = NSRect(x: 20, y: 105, width: 160, height: 20)
+        contentView.addSubview(modeLabel)
+        
+        let dPopUp = NSPopUpButton(frame: NSRect(x: 180, y: 102, width: 180, height: 25), pullsDown: false)
+        dPopUp.addItems(withTitles: [
+            "Remaining Quota % (남은 양)",
+            "Used Quota % (사용한 양)"
+        ])
+        dPopUp.selectItem(at: selectedDisplayModeIndex)
+        dPopUp.target = self
+        dPopUp.action = #selector(displayModePopUpChanged(_:))
+        self.displayModePopUp = dPopUp
+        contentView.addSubview(dPopUp)
+        
+        let infoLabel = NSTextField(labelWithString: "Customize status bar item metric and calculation mode.")
         infoLabel.font = NSFont.systemFont(ofSize: 11)
         infoLabel.textColor = .secondaryLabelColor
-        infoLabel.frame = NSRect(x: 20, y: 70, width: 300, height: 20)
+        infoLabel.frame = NSRect(x: 20, y: 65, width: 340, height: 25)
         contentView.addSubview(infoLabel)
         
         let closeBtn = NSButton(title: "Save & Close", target: self, action: #selector(closePreferences))
-        closeBtn.frame = NSRect(x: 210, y: 20, width: 110, height: 32)
+        closeBtn.frame = NSRect(x: 250, y: 18, width: 110, height: 32)
         closeBtn.bezelStyle = .rounded
         contentView.addSubview(closeBtn)
         
@@ -286,6 +331,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         UserDefaults.standard.set(enableNotifications, forKey: "enableNotifications")
     }
     
+    @objc func metricPopUpChanged(_ sender: NSPopUpButton) {
+        selectedMetricIndex = sender.indexOfSelectedItem
+        UserDefaults.standard.set(selectedMetricIndex, forKey: "selectedMetricIndex")
+        if let quota = lastFetchedQuota {
+            updateUI(with: quota)
+        }
+    }
+    
+    @objc func displayModePopUpChanged(_ sender: NSPopUpButton) {
+        selectedDisplayModeIndex = sender.indexOfSelectedItem
+        UserDefaults.standard.set(selectedDisplayModeIndex, forKey: "selectedDisplayModeIndex")
+        if let quota = lastFetchedQuota {
+            updateUI(with: quota)
+        }
+    }
+    
     @objc func closePreferences() {
         preferencesWindow?.close()
     }
@@ -294,6 +355,63 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         if UserDefaults.standard.object(forKey: "enableNotifications") != nil {
             enableNotifications = UserDefaults.standard.bool(forKey: "enableNotifications")
         }
+        if UserDefaults.standard.object(forKey: "selectedMetricIndex") != nil {
+            selectedMetricIndex = UserDefaults.standard.integer(forKey: "selectedMetricIndex")
+        }
+        if UserDefaults.standard.object(forKey: "selectedDisplayModeIndex") != nil {
+            selectedDisplayModeIndex = UserDefaults.standard.integer(forKey: "selectedDisplayModeIndex")
+        }
+    }
+    
+    func formatStatusBarTitle(quota: QuotaData) -> String {
+        if quota.status == "Initializing" {
+            return "AG: --%"
+        }
+        
+        let gW = quota.gemini_weekly_percentage ?? 100.0
+        let g5 = quota.gemini_five_hour_percentage ?? 100.0
+        let cW = quota.claude_weekly_percentage ?? 100.0
+        let c5 = quota.claude_five_hour_percentage ?? 100.0
+        
+        var targetRemPct: Double = gW
+        var metricTag: String = ""
+        
+        switch selectedMetricIndex {
+        case 0:
+            targetRemPct = gW
+            metricTag = ""
+        case 1:
+            targetRemPct = g5
+            metricTag = "G5H"
+        case 2:
+            targetRemPct = cW
+            metricTag = "CW"
+        case 3:
+            targetRemPct = c5
+            metricTag = "C5H"
+        case 4:
+            let metrics = [("GW", gW), ("G5H", g5), ("CW", cW), ("C5H", c5)]
+            if let minPair = metrics.min(by: { $0.1 < $1.1 }) {
+                targetRemPct = minPair.1
+                metricTag = minPair.0
+            }
+        default:
+            targetRemPct = gW
+            metricTag = ""
+        }
+        
+        let isUsedMode = (selectedDisplayModeIndex == 1)
+        let displayPct: Double
+        if isUsedMode {
+            displayPct = max(0.0, min(100.0, 100.0 - targetRemPct))
+        } else {
+            displayPct = targetRemPct
+        }
+        
+        let modeSuffix = isUsedMode ? "Used" : "Rem"
+        let prefix = metricTag.isEmpty ? "AG" : "AG(\(metricTag))"
+        
+        return String(format: "%@: %.0f%% %@", prefix, displayPct, modeSuffix)
     }
     
     func restartTimer() {
@@ -416,13 +534,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
     
     func updateUI(with quota: QuotaData) {
-        let geminiWeeklyPct = quota.gemini_weekly_percentage ?? 0.0
+        lastFetchedQuota = quota
         if let button = statusItem.button {
-            if quota.status == "Initializing" {
-                button.title = "AG: --%"
-            } else {
-                button.title = String(format: "AG: %.0f%%", geminiWeeklyPct)
-            }
+            button.title = formatStatusBarTitle(quota: quota)
         }
         
         let geminiWeeklyRem = quota.gemini_weekly_remaining ?? "--% remaining"
