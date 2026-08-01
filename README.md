@@ -6,13 +6,13 @@
 [![Release](https://img.shields.io/badge/Release-v1.1.0-brightgreen.svg)](https://github.com/ktw1982-coder/antigravity-usage-extension/releases/tag/v1.1.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A lightweight macOS Menu Bar application and Chrome Extension designed to monitor real-time quota usage for **Google Antigravity (AGY)** models (Gemini, Claude, and GPT).
+A lightweight native macOS Menu Bar application and Chrome Extension designed to monitor real-time quota usage for **Google Antigravity (AGY)** models (Gemini, Claude, and GPT).
 
 ---
 
 ## 🍺 Install via Homebrew Cask (Recommended)
 
-You can install **Antigravity Monitor** directly via Homebrew Cask with a single command:
+Install **Antigravity Monitor** directly via Homebrew Cask with a single command:
 
 ```bash
 brew install --cask ktw1982-coder/tap/antigravity-monitor
@@ -27,6 +27,17 @@ Alternatively, install using the quick setup script:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ktw1982-coder/antigravity-usage-extension/main/install.sh | bash
 ```
+
+---
+
+## 💡 Why Antigravity Monitor?
+
+Unlike IDE-bound extensions or resource-heavy Electron apps, **Antigravity Monitor** offers:
+
+- 🚀 **IDE Independent**: Works globally across your Mac whether you use Xcode, Cursor, PyCharm, or terminal. No need to keep VS Code open.
+- 🪶 **Ultra-Lightweight (~15MB RAM)**: Built with pure native Swift and AppKit. Zero heavy Electron bloat.
+- 🔔 **Proactive Push Alerts**: Get native macOS notifications at 80% and 90% quota thresholds before running out of quota mid-task.
+- 🌐 **Dual Ecosystem**: Use both the native macOS Status Bar app and the Chrome Extension (Manifest V3).
 
 ---
 
