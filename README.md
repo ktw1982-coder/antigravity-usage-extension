@@ -10,9 +10,19 @@ A lightweight macOS Menu Bar application and Chrome Extension designed to monito
 
 ---
 
-## ⚡ Quick Install (macOS)
+## 🍺 Install via Homebrew Cask (Recommended)
 
-Install the latest pre-built application directly to your `/Applications` directory using a single terminal command:
+You can install **Antigravity Monitor** directly via Homebrew Cask with a single command:
+
+```bash
+brew install --cask ktw1982-coder/tap/antigravity-monitor
+```
+
+---
+
+## ⚡ Alternative Quick Install (Script)
+
+Alternatively, install using the quick setup script:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ktw1982-coder/antigravity-usage-extension/main/install.sh | bash
