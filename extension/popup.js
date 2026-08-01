@@ -23,7 +23,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const API_URL = 'http://localhost:8484/usage';
 
   async function fetchUsage() {
-    // Show spinning animation
     refreshBtn.classList.add('spinning');
     statusBadge.textContent = 'Refreshing';
     statusBadge.className = 'badge ok';
@@ -37,7 +36,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = await response.json();
       
       if (data.status === 'Error') {
-        throw new Error(data.error_message || 'Backend scraping error');
+        const errType = data.error_type || 'UNKNOWN';
+        const msg = data.error_message || 'Backend scraping error';
+        throw new Error(`[${errType}] ${msg}`);
       }
       
       // Update badge
@@ -48,29 +49,32 @@ document.addEventListener('DOMContentLoaded', () => {
       mainContent.classList.remove('hidden');
       errorContent.classList.add('hidden');
       
-      // Weekly Quota binding
-      const weeklyPctVal = data.weekly_percentage || 0.0;
-      weeklyPct.textContent = `${weeklyPctVal.toFixed(1)}%`;
-      weeklyBar.style.width = `${weeklyPctVal}%`;
-      weeklyRem.textContent = data.weekly_remaining || '0% remaining';
-      weeklyRef.textContent = `Refreshes in ${data.weekly_refresh || 'Unknown'}`;
+      // Support both new & legacy structure (Gemini primary)
+      const gWeeklyPct = data.gemini_weekly_percentage !== undefined ? data.gemini_weekly_percentage : (data.weekly_percentage || 0.0);
+      const gWeeklyRem = data.gemini_weekly_remaining || data.weekly_remaining || '0% remaining';
+      const gWeeklyRef = data.gemini_weekly_refresh || data.weekly_refresh || 'Unknown';
       
-      // Update progress bar color based on percentage remaining
-      setBarColor(weeklyBar, weeklyPctVal);
+      weeklyPct.textContent = `${gWeeklyPct.toFixed(1)}%`;
+      weeklyBar.style.width = `${gWeeklyPct}%`;
+      weeklyRem.textContent = gWeeklyRem;
+      weeklyRef.textContent = `Refreshes in ${gWeeklyRef}`;
+      setBarColor(weeklyBar, gWeeklyPct);
       
       // 5-Hour Quota binding
-      const fiveHourPctVal = data.five_hour_percentage || 0.0;
-      fiveHourPct.textContent = `${fiveHourPctVal.toFixed(1)}%`;
-      fiveHourBar.style.width = `${fiveHourPctVal}%`;
-      fiveHourRem.textContent = data.five_hour_remaining || '0% remaining';
-      fiveHourRef.textContent = `Refreshes in ${data.five_hour_refresh || 'Unknown'}`;
+      const gFiveHourPct = data.gemini_five_hour_percentage !== undefined ? data.gemini_five_hour_percentage : (data.five_hour_percentage || 0.0);
+      const gFiveHourRem = data.gemini_five_hour_remaining || data.five_hour_remaining || '0% remaining';
+      const gFiveHourRef = data.gemini_five_hour_refresh || data.five_hour_refresh || 'Unknown';
       
-      setBarColor(fiveHourBar, fiveHourPctVal);
+      fiveHourPct.textContent = `${gFiveHourPct.toFixed(1)}%`;
+      fiveHourBar.style.width = `${gFiveHourPct}%`;
+      fiveHourRem.textContent = gFiveHourRem;
+      fiveHourRef.textContent = `Refreshes in ${gFiveHourRef}`;
+      setBarColor(fiveHourBar, gFiveHourPct);
       
       // Last update formatting
       if (data.last_updated) {
         const date = new Date(data.last_updated * 1000);
-        const timeStr = date.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
         lastUpdated.textContent = `Last update: ${timeStr}`;
       } else {
         lastUpdated.textContent = 'Last update: Just now';
@@ -82,9 +86,13 @@ document.addEventListener('DOMContentLoaded', () => {
       statusBadge.className = 'badge error';
       mainContent.classList.add('hidden');
       errorContent.classList.remove('hidden');
+      
+      const errorMsgEl = errorContent.querySelector('p');
+      if (errorMsgEl) {
+        errorMsgEl.textContent = error.message || 'Make sure the backend or macOS app is running on port 8484.';
+      }
       lastUpdated.textContent = 'Connection failed';
     } finally {
-      // Remove spin animation after a slight delay for better UX
       setTimeout(() => {
         refreshBtn.classList.remove('spinning');
       }, 500);
@@ -92,13 +100,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function setBarColor(barElement, percentage) {
-    // Reset colors
     barElement.classList.remove('warning', 'danger');
-    
-    // Set color based on remaining %
-    if (percentage <= 20.0) {
+    if (percentage >= 90.0) {
       barElement.classList.add('danger');
-    } else if (percentage <= 50.0) {
+    } else if (percentage >= 80.0) {
       barElement.classList.add('warning');
     }
   }

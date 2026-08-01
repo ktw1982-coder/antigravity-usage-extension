@@ -3,9 +3,20 @@
 [![macOS](https://img.shields.io/badge/OS-macOS-lightgrey.svg?style=flat&logo=apple)](https://www.apple.com/macos/)
 [![Swift](https://img.shields.io/badge/Swift-5.0+-orange.svg?style=flat&logo=swift)](https://swift.org)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg?style=flat&logo=python)](https://www.python.org)
+[![Release](https://img.shields.io/badge/Release-v1.1.0-brightgreen.svg)](https://github.com/ktw1982-coder/antigravity-usage-extension/releases/tag/v1.1.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A lightweight macOS Menu Bar application and Chrome Extension designed to monitor real-time quota usage for **Google Antigravity (AGY)** models (Gemini, Claude, and GPT).
+
+---
+
+## ⚡ Quick Install (macOS)
+
+Install the latest pre-built application directly to your `/Applications` directory using a single terminal command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ktw1982-coder/antigravity-usage-extension/main/install.sh | bash
+```
 
 ---
 
@@ -13,9 +24,11 @@ A lightweight macOS Menu Bar application and Chrome Extension designed to monito
 
 - 📊 **Real-time Quota Tracking**: Displays weekly and 5-hour quota percentages and refresh reset times for Gemini, Claude, and GPT models.
 - 🍏 **Native macOS Menu Bar App**: Built with Swift for a lightweight, seamless experience on your menu bar.
+- ⚙️ **Preferences Window (Cmd + ,)**: Toggle push notifications and customize preferences.
+- 🔔 **Push Notifications**: Receive instant macOS notifications when quota usage reaches 80% or 90%.
 - 🚀 **Launch at Login**: Easily toggle auto-start on system boot directly from the menu bar dropdown.
+- 🛡️ **Robust Parsing Engine**: Built-in fallback parsing pattern to ensure stability across CLI updates.
 - 🌐 **Chrome Extension**: Quick popup interface (Manifest V3) to check quota status directly inside Google Chrome.
-- ⚡ **Automated Backend Daemon**: Includes a Python background service (`server.py`) that periodically polls quota data from the `agy` CLI via PTY interaction.
 
 ---
 
@@ -53,7 +66,7 @@ Before installing, ensure you have the following installed on your environment:
 
 ---
 
-## 🛠️ Installation & Setup
+## 🛠️ Manual Build & Setup
 
 ### 1. Clone the Repository
 
@@ -62,28 +75,22 @@ git clone https://github.com/ktw1982-coder/antigravity-usage-extension.git
 cd antigravity-usage-extension
 ```
 
-### 2. macOS Menu Bar App Setup
-
-You can build and package the standalone `.app` bundle using the included build script:
+### 2. macOS Menu Bar App Build
 
 ```bash
 cd menubar
 zsh build_app.sh
 ```
 
-This generates `AntigravityMonitor.app` inside the `menubar/` directory.
-
-#### Move to Applications Folder (Recommended):
+#### Move to Applications Folder:
 ```bash
 cp -R AntigravityMonitor.app /Applications/
 ```
 
-Launch `AntigravityMonitor.app` from `/Applications` or Spotlight.
-
 ### 3. Chrome Extension Setup (Optional)
 
 1. Open **Google Chrome** and navigate to `chrome://extensions/`.
-2. Enable **Developer mode** (toggle in the top-right corner).
+2. Enable **Developer mode** (toggle in top-right corner).
 3. Click **Load unpacked**.
 4. Select the `extension/` directory from this repository.
 
@@ -92,28 +99,12 @@ Launch `AntigravityMonitor.app` from `/Applications` or Spotlight.
 ## 💡 Usage
 
 ### Using the macOS Menu Bar App
-1. Once launched, you will see an icon in your macOS status bar displaying the current quota percentage (e.g., `AG: 85%`).
-2. Click the status bar icon to open the dropdown menu:
-   - **Gemini Models Quota**: View Weekly and 5-Hour usage limits along with refresh countdowns.
-   - **Claude & GPT Models Quota**: View model usage and reset timers.
-   - **Launch at Login**: Click to toggle auto-start on macOS startup.
-   - **Force Refresh**: Instantly query and update the quota data.
-
-### Using the Chrome Extension
-1. Click the Antigravity extension icon in your Chrome toolbar.
-2. View your live quota status in a popup window.
-
----
-
-## 🔧 Configuration & Customization
-
-The backend server runs locally on port `8484` by default.
-
-- **Backend Entry Point**: `backend/server.py`
-- **Port Customization**: You can specify a custom port by passing an argument:
-  ```bash
-  python3 backend/server.py 8484
-  ```
+1. Once launched, you will see an icon in your status bar displaying current quota percentage (e.g., `AG: 85%`).
+2. Click the icon to view:
+   - **Gemini & Claude Models Quota**: Weekly and 5-Hour usage limits along with reset countdowns.
+   - **Preferences... (Cmd + ,)**: Toggle push notifications and customize settings.
+   - **Launch at Login**: Toggle auto-start on macOS startup.
+   - **Force Refresh**: Instantly query and update quota data.
 
 ---
 
