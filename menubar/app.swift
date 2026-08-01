@@ -47,6 +47,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     var updatedMenuItem: NSMenuItem!
     var launchAtLoginMenuItem: NSMenuItem!
     var preferencesMenuItem: NSMenuItem!
+    var dashboardMenuItem: NSMenuItem!
     
     // Preferences Window
     var preferencesWindow: NSWindow?
@@ -120,12 +121,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         
         menu.addItem(NSMenuItem.separator())
         
-        // -- Last Update & Control --
+        // -- Last Update & Dashboard --
         updatedMenuItem = NSMenuItem(title: "Last Update: --", action: nil, keyEquivalent: "")
         updatedMenuItem.isEnabled = false
         menu.addItem(updatedMenuItem)
         
         menu.addItem(NSMenuItem.separator())
+        
+        // Open Web Analytics Dashboard
+        dashboardMenuItem = NSMenuItem(title: "Open Dashboard 📊", action: #selector(openDashboard), keyEquivalent: "d")
+        dashboardMenuItem.target = self
+        menu.addItem(dashboardMenuItem)
         
         // Preferences Window Item
         preferencesMenuItem = NSMenuItem(title: "Preferences...", action: #selector(openPreferences), keyEquivalent: ",")
@@ -160,6 +166,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     
     func applicationWillTerminate(_ notification: Notification) {
         stopBackendServer()
+    }
+    
+    @objc func openDashboard() {
+        if let url = URL(string: "http://localhost:8484/dashboard") {
+            NSWorkspace.shared.open(url)
+        }
     }
     
     // -- Notifications Setup --

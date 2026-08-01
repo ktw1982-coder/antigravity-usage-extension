@@ -22,7 +22,7 @@ body {
   background-color: var(--bg-color);
   color: var(--text-primary);
   width: 320px;
-  overflow-hidden: hidden;
+  overflow: hidden;
 }
 
 .container {
@@ -242,6 +242,29 @@ footer {
   border-top: 1px solid var(--border-color);
   font-size: 10px;
   color: var(--text-secondary);
+}
+
+.footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-dashboard {
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: #38bdf8;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-dashboard:hover {
+  background: rgba(56, 189, 248, 0.25);
+  border-color: #38bdf8;
 }
 
 .refresh-icon-btn {

@@ -19,6 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Buttons
   const refreshBtn = document.getElementById('refresh-btn');
   const retryBtn = document.getElementById('retry-btn');
+  const dashboardBtn = document.getElementById('dashboard-btn');
   
   const API_URL = 'http://localhost:8484/usage';
 
@@ -41,15 +42,12 @@ document.addEventListener('DOMContentLoaded', () => {
         throw new Error(`[${errType}] ${msg}`);
       }
       
-      // Update badge
       statusBadge.textContent = 'Live';
       statusBadge.className = 'badge ok';
       
-      // Toggle visibility
       mainContent.classList.remove('hidden');
       errorContent.classList.add('hidden');
       
-      // Support both new & legacy structure (Gemini primary)
       const gWeeklyPct = data.gemini_weekly_percentage !== undefined ? data.gemini_weekly_percentage : (data.weekly_percentage || 0.0);
       const gWeeklyRem = data.gemini_weekly_remaining || data.weekly_remaining || '0% remaining';
       const gWeeklyRef = data.gemini_weekly_refresh || data.weekly_refresh || 'Unknown';
@@ -60,7 +58,6 @@ document.addEventListener('DOMContentLoaded', () => {
       weeklyRef.textContent = `Refreshes in ${gWeeklyRef}`;
       setBarColor(weeklyBar, gWeeklyPct);
       
-      // 5-Hour Quota binding
       const gFiveHourPct = data.gemini_five_hour_percentage !== undefined ? data.gemini_five_hour_percentage : (data.five_hour_percentage || 0.0);
       const gFiveHourRem = data.gemini_five_hour_remaining || data.five_hour_remaining || '0% remaining';
       const gFiveHourRef = data.gemini_five_hour_refresh || data.five_hour_refresh || 'Unknown';
@@ -71,7 +68,6 @@ document.addEventListener('DOMContentLoaded', () => {
       fiveHourRef.textContent = `Refreshes in ${gFiveHourRef}`;
       setBarColor(fiveHourBar, gFiveHourPct);
       
-      // Last update formatting
       if (data.last_updated) {
         const date = new Date(data.last_updated * 1000);
         const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -111,6 +107,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // Event Listeners
   refreshBtn.addEventListener('click', fetchUsage);
   retryBtn.addEventListener('click', fetchUsage);
+  if (dashboardBtn) {
+    dashboardBtn.addEventListener('click', () => {
+      chrome.tabs.create({ url: 'http://localhost:8484/dashboard' });
+    });
+  }
 
   // Initial Fetch
   fetchUsage();
