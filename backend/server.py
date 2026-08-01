@@ -793,7 +793,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 
                 if (data.last_updated) {
                     const d = new Date(data.last_updated * 1000);
-                    document.getElementById('update-time').textContent = `Live: ${d.toLocaleTimeString()}`;
+                    document.getElementById('update-time').textContent = `Live: ${d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}`;
                 }
             } catch (err) {
                 console.error("Failed to fetch current usage:", err);
@@ -829,9 +829,9 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             const labels = filtered.map(h => {
                 const d = new Date(h.timestamp * 1000);
                 if (currentRange === '1H' || currentRange === '6H' || currentRange === '24H') {
-                    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
                 } else {
-                    return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:00`;
+                    return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours().toString().padStart(2, '0')}:00`;
                 }
             });
 
