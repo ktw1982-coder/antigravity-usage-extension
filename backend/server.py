@@ -76,6 +76,25 @@ def clean_ansi(text):
     ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
     return ansi_escape.sub('', text)
 
+def format_refresh_time(refresh_str):
+    if not refresh_str or refresh_str in ["--", "N/A", "Unknown"]:
+        return refresh_str
+
+    match_h = re.search(r'(\d+)\s*h', refresh_str, re.IGNORECASE)
+    if match_h:
+        total_hours = int(match_h.group(1))
+        if total_hours >= 24:
+            days = total_hours // 24
+            rem_hours = total_hours % 24
+            if rem_hours > 0:
+                h_replacement = f"{days}d {rem_hours}h"
+            else:
+                h_replacement = f"{days}d"
+            formatted = re.sub(r'\b' + match_h.group(1) + r'\s*h\b', h_replacement, refresh_str, flags=re.IGNORECASE)
+            return formatted
+
+    return refresh_str
+
 def parse_section_robust(sec_text):
     sec_data = {
         "weekly_percentage": 0.0,
@@ -152,6 +171,9 @@ def parse_section_robust(sec_text):
     elif "unlimited" in sec_lower or "no limit" in sec_lower:
         sec_data["five_hour_remaining"] = "Unlimited Tier"
         sec_data["five_hour_refresh"] = "N/A"
+
+    sec_data["weekly_refresh"] = format_refresh_time(sec_data["weekly_refresh"])
+    sec_data["five_hour_refresh"] = format_refresh_time(sec_data["five_hour_refresh"])
 
     return sec_data
 
