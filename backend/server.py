@@ -56,9 +56,9 @@ def save_history(entry):
     with history_lock:
         history = load_history()
         history.append(entry)
-        # Keep last 288 data points (approx 24 hours assuming 5-min intervals)
-        if len(history) > 288:
-            history = history[-288:]
+        # Keep last 2016 data points (approx 7 days assuming 5-min intervals)
+        if len(history) > 2016:
+            history = history[-2016:]
         try:
             with open(HISTORY_FILE, "w", encoding="utf-8") as f:
                 json.dump(history, f, ensure_ascii=False, indent=2)
@@ -91,7 +91,7 @@ def parse_section_robust(sec_text):
         
     sec_lower = sec_text.lower()
 
-    # 1. Weekly Limit Parsing (percentage represents REMAINING in CLI)
+    # 1. Weekly Limit Parsing
     weekly_pattern1 = re.compile(
         r'Weekly Limit\s*\n\s*\[[█░#=-]*\]\s*([\d.]+)%\s*\n\s*([^\n]+)', 
         re.MULTILINE | re.IGNORECASE
@@ -319,8 +319,6 @@ def quota_loader_loop():
                     quota_cache["error_type"] = "None"
                     quota_cache["error_message"] = ""
                     
-                    # Convert remaining % to ACTUAL USED % for Usage Trend History
-                    # (Remaining % in CLI -> Used % = max(0, 100 - remaining))
                     g_w_rem = quota_cache.get("gemini_weekly_percentage", 100.0)
                     g_5_rem = quota_cache.get("gemini_five_hour_percentage", 100.0)
                     c_w_rem = quota_cache.get("claude_weekly_percentage", 100.0)
@@ -333,7 +331,6 @@ def quota_loader_loop():
                         "claude_weekly_used": round(max(0.0, 100.0 - c_w_rem), 1),
                         "claude_five_hour_used": round(max(0.0, 100.0 - c_5_rem), 1),
 
-                        # Keep legacy fields for backwards compatibility
                         "gemini_weekly": round(max(0.0, 100.0 - g_w_rem), 1),
                         "gemini_five_hour": round(max(0.0, 100.0 - g_5_rem), 1),
                         "claude_weekly": round(max(0.0, 100.0 - c_w_rem), 1),
@@ -542,6 +539,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             justify-content: space-between;
             align-items: center;
             margin-bottom: 1.25rem;
+            flex-wrap: wrap;
+            gap: 0.75rem;
         }
 
         .chart-title {
@@ -556,6 +555,39 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             font-size: 0.85rem;
             color: var(--text-muted);
             font-weight: 400;
+        }
+
+        /* Time Range Selector Buttons */
+        .time-selector {
+            display: flex;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--card-border);
+            border-radius: 0.5rem;
+            padding: 2px;
+            gap: 2px;
+        }
+
+        .time-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            font-weight: 600;
+            padding: 0.35rem 0.75rem;
+            border-radius: 0.35rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .time-btn:hover {
+            color: var(--text-main);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .time-btn.active {
+            background: var(--accent-gemini);
+            color: #0f172a;
+            box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
         }
 
         .chart-container {
@@ -671,8 +703,16 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         <div class="chart-section">
             <div class="chart-header">
                 <div class="chart-title">
-                    <span>📈 24-Hour Usage Trend History</span>
+                    <span>📈 Usage Trend History</span>
                     <span class="chart-subtitle">(Actual Consumption %)</span>
+                </div>
+                <!-- Time Range Buttons -->
+                <div class="time-selector">
+                    <button class="time-btn" onclick="setTimeRange('1H', this)">1H</button>
+                    <button class="time-btn" onclick="setTimeRange('6H', this)">6H</button>
+                    <button class="time-btn active" onclick="setTimeRange('24H', this)">24H</button>
+                    <button class="time-btn" onclick="setTimeRange('7D', this)">7D</button>
+                    <button class="time-btn" onclick="setTimeRange('ALL', this)">ALL</button>
                 </div>
             </div>
             <div class="chart-container">
@@ -687,13 +727,14 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 
     <script>
         let chartInstance = null;
+        let cachedHistory = [];
+        let currentRange = '24H';
 
         async function fetchMetrics() {
             try {
                 const res = await fetch('/usage');
                 const data = await res.json();
 
-                // Helper: CLI returns REMAINING percentage, calculate USED = max(0, 100 - remaining)
                 const calcUsed = (remPct) => Math.max(0, Math.min(100, 100 - (remPct || 0)));
 
                 // Gemini Weekly
@@ -737,117 +778,151 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             }
         }
 
-        async function fetchHistoryAndRenderChart() {
-            try {
-                const res = await fetch('/history');
-                const history = await res.json();
+        function filterHistoryByRange(history, range) {
+            if (!history || history.length === 0) return [];
+            const now = Math.floor(Date.now() / 1000);
+            
+            let secondsCutoff = 86400; // default 24h
+            if (range === '1H') secondsCutoff = 3600;
+            else if (range === '6H') secondsCutoff = 21600;
+            else if (range === '24H') secondsCutoff = 86400;
+            else if (range === '7D') secondsCutoff = 604800;
+            else if (range === 'ALL') secondsCutoff = Infinity;
 
-                const labels = history.map(h => {
-                    const d = new Date(h.timestamp * 1000);
+            return history.filter(h => (now - h.timestamp) <= secondsCutoff);
+        }
+
+        function setTimeRange(range, btnElement) {
+            currentRange = range;
+            document.querySelectorAll('.time-btn').forEach(btn => btn.classList.remove('active'));
+            if (btnElement) {
+                btnElement.classList.add('active');
+            }
+            renderChart(cachedHistory);
+        }
+
+        function renderChart(historyData) {
+            const filtered = filterHistoryByRange(historyData, currentRange);
+
+            const labels = filtered.map(h => {
+                const d = new Date(h.timestamp * 1000);
+                if (currentRange === '1H' || currentRange === '6H' || currentRange === '24H') {
                     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                });
-
-                // Correctly map ACTUAL USED QUOTA %
-                const gWeeklyUsed = history.map(h => h.gemini_weekly_used !== undefined ? h.gemini_weekly_used : (h.gemini_weekly || 0));
-                const gFiveHourUsed = history.map(h => h.gemini_five_hour_used !== undefined ? h.gemini_five_hour_used : (h.gemini_five_hour || 0));
-                const cWeeklyUsed = history.map(h => h.claude_weekly_used !== undefined ? h.claude_weekly_used : (h.claude_weekly || 0));
-                const cFiveHourUsed = history.map(h => h.claude_five_hour_used !== undefined ? h.claude_five_hour_used : (h.claude_five_hour || 0));
-
-                const ctx = document.getElementById('trendChart').getContext('2d');
-
-                if (chartInstance) {
-                    chartInstance.destroy();
+                } else {
+                    return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:00`;
                 }
+            });
 
-                chartInstance = new Chart(ctx, {
-                    type: 'line',
-                    data: {
-                        labels: labels.length > 0 ? labels : ['Now'],
-                        datasets: [
-                            {
-                                label: 'Gemini Weekly Used %',
-                                data: gWeeklyUsed.length > 0 ? gWeeklyUsed : [0],
-                                borderColor: '#38bdf8',
-                                backgroundColor: 'rgba(56, 189, 248, 0.15)',
-                                fill: true,
-                                tension: 0.35,
-                                borderWidth: 2.5
-                            },
-                            {
-                                label: 'Gemini 5-Hour Used %',
-                                data: gFiveHourUsed.length > 0 ? gFiveHourUsed : [0],
-                                borderColor: '#818cf8',
-                                backgroundColor: 'transparent',
-                                borderDash: [4, 4],
-                                tension: 0.35,
-                                borderWidth: 2
-                            },
-                            {
-                                label: 'Claude Weekly Used %',
-                                data: cWeeklyUsed.length > 0 ? cWeeklyUsed : [0],
-                                borderColor: '#a855f7',
-                                backgroundColor: 'rgba(168, 85, 247, 0.15)',
-                                fill: true,
-                                tension: 0.35,
-                                borderWidth: 2.5
-                            },
-                            {
-                                label: 'Claude 5-Hour Used %',
-                                data: cFiveHourUsed.length > 0 ? cFiveHourUsed : [0],
-                                borderColor: '#ec4899',
-                                backgroundColor: 'transparent',
-                                borderDash: [4, 4],
-                                tension: 0.35,
-                                borderWidth: 2
-                            }
-                        ]
+            const gWeeklyUsed = filtered.map(h => h.gemini_weekly_used !== undefined ? h.gemini_weekly_used : (h.gemini_weekly || 0));
+            const gFiveHourUsed = filtered.map(h => h.gemini_five_hour_used !== undefined ? h.gemini_five_hour_used : (h.gemini_five_hour || 0));
+            const cWeeklyUsed = filtered.map(h => h.claude_weekly_used !== undefined ? h.claude_weekly_used : (h.claude_weekly || 0));
+            const cFiveHourUsed = filtered.map(h => h.claude_five_hour_used !== undefined ? h.claude_five_hour_used : (h.claude_five_hour || 0));
+
+            const ctx = document.getElementById('trendChart').getContext('2d');
+
+            if (chartInstance) {
+                chartInstance.destroy();
+            }
+
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels.length > 0 ? labels : ['Now'],
+                    datasets: [
+                        {
+                            label: 'Gemini Weekly Used %',
+                            data: gWeeklyUsed.length > 0 ? gWeeklyUsed : [0],
+                            borderColor: '#38bdf8',
+                            backgroundColor: 'rgba(56, 189, 248, 0.15)',
+                            fill: true,
+                            tension: 0.35,
+                            borderWidth: 2.5
+                        },
+                        {
+                            label: 'Gemini 5-Hour Used %',
+                            data: gFiveHourUsed.length > 0 ? gFiveHourUsed : [0],
+                            borderColor: '#818cf8',
+                            backgroundColor: 'transparent',
+                            borderDash: [4, 4],
+                            tension: 0.35,
+                            borderWidth: 2
+                        },
+                        {
+                            label: 'Claude Weekly Used %',
+                            data: cWeeklyUsed.length > 0 ? cWeeklyUsed : [0],
+                            borderColor: '#a855f7',
+                            backgroundColor: 'rgba(168, 85, 247, 0.15)',
+                            fill: true,
+                            tension: 0.35,
+                            borderWidth: 2.5
+                        },
+                        {
+                            label: 'Claude 5-Hour Used %',
+                            data: cFiveHourUsed.length > 0 ? cFiveHourUsed : [0],
+                            borderColor: '#ec4899',
+                            backgroundColor: 'transparent',
+                            borderDash: [4, 4],
+                            tension: 0.35,
+                            borderWidth: 2
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: {
+                        duration: 400
                     },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        interaction: {
-                            mode: 'index',
-                            intersect: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: { color: '#94a3b8' }
                         },
-                        scales: {
-                            x: {
-                                grid: { color: 'rgba(255, 255, 255, 0.05)' },
-                                ticks: { color: '#94a3b8' }
+                        y: {
+                            min: 0,
+                            max: 100,
+                            title: {
+                                display: true,
+                                text: 'Quota Used (%)',
+                                color: '#94a3b8'
                             },
-                            y: {
-                                min: 0,
-                                max: 100,
-                                title: {
-                                    display: true,
-                                    text: 'Quota Used (%)',
-                                    color: '#94a3b8'
-                                },
-                                grid: { color: 'rgba(255, 255, 255, 0.05)' },
-                                ticks: {
-                                    color: '#94a3b8',
-                                    callback: function(val) { return val + '%'; }
-                                }
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: {
+                                color: '#94a3b8',
+                                callback: function(val) { return val + '%'; }
                             }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            labels: { color: '#f8fafc', font: { family: 'Inter' } }
                         },
-                        plugins: {
-                            legend: {
-                                labels: { color: '#f8fafc', font: { family: 'Inter' } }
-                            },
-                            tooltip: {
-                                backgroundColor: '#1e293b',
-                                titleColor: '#f8fafc',
-                                bodyColor: '#94a3b8',
-                                borderColor: '#334155',
-                                borderWidth: 1,
-                                callbacks: {
-                                    label: function(context) {
-                                        return `${context.dataset.label}: ${context.raw}% Used`;
-                                    }
+                        tooltip: {
+                            backgroundColor: '#1e293b',
+                            titleColor: '#f8fafc',
+                            bodyColor: '#94a3b8',
+                            borderColor: '#334155',
+                            borderWidth: 1,
+                            callbacks: {
+                                label: function(context) {
+                                    return `${context.dataset.label}: ${context.raw}% Used`;
                                 }
                             }
                         }
                     }
-                });
+                }
+            });
+        }
+
+        async function fetchHistoryAndRenderChart() {
+            try {
+                const res = await fetch('/history');
+                cachedHistory = await res.json();
+                renderChart(cachedHistory);
             } catch (err) {
                 console.error("Failed to fetch history:", err);
             }
