@@ -129,11 +129,15 @@ def parse_section_robust(sec_text):
         
         if len(weekly_match.groups()) >= 2:
             details = weekly_match.group(2).strip()
-            if "remaining" in details.lower() and "refreshes in" in details.lower():
+            if "·" in details:
                 parts = details.split('·')
                 sec_data["weekly_remaining"] = parts[0].strip()
                 if len(parts) > 1:
                     sec_data["weekly_refresh"] = parts[1].replace('Refreshes in', '').replace('refreshes in', '').strip()
+            elif "refreshes in" in details.lower():
+                sec_data["weekly_percentage"] = 0.0
+                sec_data["weekly_remaining"] = "0% remaining"
+                sec_data["weekly_refresh"] = details.lower().replace('refreshes in', '').strip()
             else:
                 sec_data["weekly_remaining"] = details if details else "Quota Available"
                 sec_data["weekly_refresh"] = "--"
@@ -160,11 +164,15 @@ def parse_section_robust(sec_text):
         
         if len(five_hour_match.groups()) >= 2:
             details = five_hour_match.group(2).strip()
-            if "remaining" in details.lower() and "refreshes in" in details.lower():
+            if "·" in details:
                 parts = details.split('·')
                 sec_data["five_hour_remaining"] = parts[0].strip()
                 if len(parts) > 1:
                     sec_data["five_hour_refresh"] = parts[1].replace('Refreshes in', '').replace('refreshes in', '').strip()
+            elif "refreshes in" in details.lower():
+                sec_data["five_hour_percentage"] = 0.0
+                sec_data["five_hour_remaining"] = "0% remaining"
+                sec_data["five_hour_refresh"] = details.lower().replace('refreshes in', '').strip()
             else:
                 sec_data["five_hour_remaining"] = details if details else "Quota Available"
                 sec_data["five_hour_refresh"] = "--"
