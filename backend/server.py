@@ -97,10 +97,10 @@ def format_refresh_time(refresh_str):
 
 def parse_section_robust(sec_text):
     sec_data = {
-        "weekly_percentage": 0.0,
+        "weekly_percentage": 100.0,
         "weekly_remaining": "Quota Available",
         "weekly_refresh": "--",
-        "five_hour_percentage": 0.0,
+        "five_hour_percentage": 100.0,
         "five_hour_remaining": "Quota Available",
         "five_hour_refresh": "--"
     }
@@ -138,10 +138,15 @@ def parse_section_robust(sec_text):
                 sec_data["weekly_percentage"] = 0.0
                 sec_data["weekly_remaining"] = "0% remaining"
                 sec_data["weekly_refresh"] = details.lower().replace('refreshes in', '').strip()
+            elif "quota available" in details.lower():
+                sec_data["weekly_percentage"] = 100.0
+                sec_data["weekly_remaining"] = "Quota Available"
+                sec_data["weekly_refresh"] = "--"
             else:
                 sec_data["weekly_remaining"] = details if details else "Quota Available"
                 sec_data["weekly_refresh"] = "--"
     elif "unlimited" in sec_lower or "no limit" in sec_lower:
+        sec_data["weekly_percentage"] = 100.0
         sec_data["weekly_remaining"] = "Unlimited Tier"
         sec_data["weekly_refresh"] = "N/A"
 
@@ -173,10 +178,15 @@ def parse_section_robust(sec_text):
                 sec_data["five_hour_percentage"] = 0.0
                 sec_data["five_hour_remaining"] = "0% remaining"
                 sec_data["five_hour_refresh"] = details.lower().replace('refreshes in', '').strip()
+            elif "quota available" in details.lower():
+                sec_data["five_hour_percentage"] = 100.0
+                sec_data["five_hour_remaining"] = "Quota Available"
+                sec_data["five_hour_refresh"] = "--"
             else:
                 sec_data["five_hour_remaining"] = details if details else "Quota Available"
                 sec_data["five_hour_refresh"] = "--"
     elif "unlimited" in sec_lower or "no limit" in sec_lower:
+        sec_data["five_hour_percentage"] = 100.0
         sec_data["five_hour_remaining"] = "Unlimited Tier"
         sec_data["five_hour_refresh"] = "N/A"
 
@@ -185,9 +195,9 @@ def parse_section_robust(sec_text):
 
     # If Weekly Quota is completely exhausted (0% remaining / 100% used),
     # force 5-Hour Quota to 0% remaining (100% used) as it's effectively blocked.
-    if sec_data["weekly_percentage"] == 0.0 and (
+    if sec_data["weekly_percentage"] == 0.0 and "quota available" not in sec_data["weekly_remaining"].lower() and (
         "refreshes in" in sec_data["weekly_remaining"].lower() or 
-        "remaining" in sec_data["weekly_remaining"].lower() or 
+        "0%" in sec_data["weekly_remaining"].lower() or 
         sec_data["weekly_refresh"] != "--"
     ):
         sec_data["five_hour_percentage"] = 0.0
