@@ -112,7 +112,7 @@ def parse_section_robust(sec_text):
 
     # 1. Weekly Limit Parsing
     weekly_pattern1 = re.compile(
-        r'Weekly Limit\s*\n\s*\[[█░#=-]*\]\s*([\d.]+)%\s*\n\s*([^\n]+)', 
+        r'Weekly Limit[^\n]*?\n\s*\[[█░#=-]*\]\s*([\d.]+)%\s*\n\s*([^\n]+)', 
         re.MULTILINE | re.IGNORECASE
     )
     weekly_pattern2 = re.compile(
@@ -152,7 +152,7 @@ def parse_section_robust(sec_text):
 
     # 2. Five Hour Limit Parsing
     five_hour_pattern1 = re.compile(
-        r'Five Hour Limit\s*\n\s*\[[█░#=-]*\]\s*([\d.]+)%\s*\n\s*([^\n]+)', 
+        r'Five Hour Limit[^\n]*?\n\s*\[[█░#=-]*\]\s*([\d.]+)%\s*\n\s*([^\n]+)', 
         re.MULTILINE | re.IGNORECASE
     )
     five_hour_pattern2 = re.compile(
