@@ -434,7 +434,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         process.executableURL = URL(fileURLWithPath: "/bin/zsh")
         
         let myPid = ProcessInfo.processInfo.processIdentifier
-        let command = "python3 \"\(scriptPath)\" 8484 \(myPid)"
+        let command = "pkill -f 'server.py' 2>/dev/null; sleep 0.5; python3 \"\(scriptPath)\" 8484 \(myPid)"
         process.arguments = ["-c", command]
         
         process.standardOutput = Pipe()

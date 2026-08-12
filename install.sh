@@ -7,7 +7,7 @@ echo "    Antigravity Quota Monitor Installer for macOS"
 echo "======================================================"
 
 REPO="ktw1982-coder/antigravity-usage-extension"
-LATEST_RELEASE_URL="https://github.com/${REPO}/releases/download/v1.5.7/AntigravityMonitor-v1.5.7-macOS.zip"
+LATEST_RELEASE_URL="https://github.com/${REPO}/releases/download/v1.5.8/AntigravityMonitor-v1.5.8-macOS.zip"
 TMP_DIR=$(mktemp -d)
 ZIP_FILE="${TMP_DIR}/AntigravityMonitor.zip"
 
