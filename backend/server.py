@@ -294,11 +294,11 @@ def fetch_quota_from_agy():
         return b"".join(res)
         
     try:
-        time.sleep(3)
+        time.sleep(2)
         startup_bytes = read_available(3)
         clean_startup = clean_ansi(startup_bytes.decode('utf-8', errors='ignore'))
         
-        if "trust the contents" in clean_startup.lower() or "trust this folder" in clean_startup.lower():
+        if any(w in clean_startup.lower() for w in ["trust", "already open", "conflict", "warning", "press enter"]):
             os.write(master, b"\r\n")
             time.sleep(1)
             read_available(2)
@@ -312,12 +312,20 @@ def fetch_quota_from_agy():
                 "cli_path": agy_path
             }
             
+        # Send /usage to fetch model quotas
         os.write(master, b"/usage\r\n")
-        time.sleep(4)
+        time.sleep(3)
         
         usage_bytes = read_available(4)
         raw_usage = usage_bytes.decode('utf-8', errors='ignore')
         clean_usage = clean_ansi(raw_usage)
+
+        # Retry sending enter or /usage if quota headings were not captured yet
+        if not any(keyword in clean_usage.lower() for keyword in ["weekly limit", "five hour limit", "gemini models", "claude"]):
+            os.write(master, b"\r\n/usage\r\n")
+            time.sleep(3)
+            retry_bytes = read_available(4)
+            clean_usage += clean_ansi(retry_bytes.decode('utf-8', errors='ignore'))
         
         parsed = parse_quota(clean_usage)
         if not parsed:
