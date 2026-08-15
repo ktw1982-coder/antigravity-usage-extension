@@ -7,7 +7,7 @@ echo "    Antigravity Quota Monitor Installer for macOS"
 echo "======================================================"
 
 REPO="ktw1982-coder/antigravity-usage-extension"
-LATEST_RELEASE_URL="https://github.com/${REPO}/releases/download/v1.5.8/AntigravityMonitor-v1.5.8-macOS.zip"
+LATEST_RELEASE_URL="https://github.com/${REPO}/releases/download/v1.5.9/AntigravityMonitor-v1.5.9-macOS.zip"
 TMP_DIR=$(mktemp -d)
 ZIP_FILE="${TMP_DIR}/AntigravityMonitor.zip"
 
@@ -24,6 +24,9 @@ if [ -d "/Applications/AntigravityMonitor.app" ]; then
 fi
 
 mv "${TMP_DIR}/AntigravityMonitor.app" "/Applications/"
+
+echo "[*] Removing quarantine attributes..."
+xattr -cr "/Applications/AntigravityMonitor.app" 2>/dev/null || true
 
 echo "[*] Cleaning up temporary files..."
 rm -rf "${TMP_DIR}"

@@ -48,5 +48,11 @@ echo "Setting executable permissions..."
 chmod +x "$MACOS_DIR/AntigravityMonitor"
 chmod +x "$RESOURCES_DIR/server.py"
 
+echo "Applying Ad-hoc code signing..."
+codesign --force --deep --sign - "$APP_DIR" 2>/dev/null || true
+
+echo "Removing quarantine attributes..."
+xattr -cr "$APP_DIR" 2>/dev/null || true
+
 echo "✅ Standalone App bundle packaging complete: $APP_DIR"
 echo "You can now safely move $APP_DIR to /Applications or any folder. It contains everything inside!"
