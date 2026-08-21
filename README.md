@@ -10,22 +10,27 @@ A lightweight native macOS Menu Bar application, Web Analytics Dashboard, and Ch
 
 ---
 
-## 🍺 Install via Homebrew Cask (Recommended)
+## ⚡ Quick 1-Line Install (Recommended)
 
-Install **Antigravity Monitor** directly via Homebrew Cask with a single command:
+Install and launch **Antigravity Monitor** instantly with a single command (no Homebrew setup required):
 
 ```bash
-brew install --cask ktw1982-coder/tap/antigravity-monitor
+curl -fsSL https://raw.githubusercontent.com/ktw1982-coder/antigravity-usage-extension/main/install.sh | bash
 ```
 
 ---
 
-## ⚡ Alternative Quick Install (Script)
+## 🍺 Install via Homebrew Cask
 
-Alternatively, install using the quick setup script:
+Alternatively, install via Homebrew with a single command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ktw1982-coder/antigravity-usage-extension/main/install.sh | bash
+brew tap ktw1982-coder/tap && brew trust ktw1982-coder/tap 2>/dev/null; brew install --cask antigravity-monitor
+```
+
+To upgrade later:
+```bash
+brew update && brew upgrade antigravity-monitor
 ```
 
 ---
