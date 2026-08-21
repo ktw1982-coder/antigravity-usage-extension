@@ -458,7 +458,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
     
     @objc func refreshQuota() {
-        fetchQuota()
+        fetchQuota(forceRefresh: true)
     }
     
     @objc func quitApp() {
@@ -466,8 +466,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         NSApplication.shared.terminate(nil)
     }
     
-    func fetchQuota() {
-        guard let url = URL(string: "http://localhost:8484/usage") else { return }
+    func fetchQuota(forceRefresh: Bool = false) {
+        let endpoint = forceRefresh ? "http://localhost:8484/refresh" : "http://localhost:8484/usage"
+        guard let url = URL(string: endpoint) else { return }
         
         let task = URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
             DispatchQueue.main.async {

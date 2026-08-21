@@ -112,11 +112,11 @@ def parse_section_robust(sec_text):
 
     # 1. Weekly Limit Parsing
     weekly_pattern1 = re.compile(
-        r'Weekly Limit[^\n]*?\n\s*\[[█░#=-]*\]\s*([\d.]+)%\s*\n\s*([^\n]+)', 
+        r'Weekly Limit[^\n]*?\n+\s*\[[█░#=-]*\]\s*([\d.]+)%\s*\n+\s*([^\n]+)', 
         re.MULTILINE | re.IGNORECASE
     )
     weekly_pattern2 = re.compile(
-        r'Weekly[^\n]*?([\d.]+)%\s*\n?\s*([^\n]*)', 
+        r'Weekly[^\n]*?([\d.]+)%\s*\n*?\s*([^\n]*)', 
         re.IGNORECASE
     )
     
@@ -152,11 +152,11 @@ def parse_section_robust(sec_text):
 
     # 2. Five Hour Limit Parsing
     five_hour_pattern1 = re.compile(
-        r'Five Hour Limit[^\n]*?\n\s*\[[█░#=-]*\]\s*([\d.]+)%\s*\n\s*([^\n]+)', 
+        r'Five Hour Limit[^\n]*?\n+\s*\[[█░#=-]*\]\s*([\d.]+)%\s*\n+\s*([^\n]+)', 
         re.MULTILINE | re.IGNORECASE
     )
     five_hour_pattern2 = re.compile(
-        r'Five Hour[^\n]*?([\d.]+)%\s*\n?\s*([^\n]*)', 
+        r'Five Hour[^\n]*?([\d.]+)%\s*\n*?\s*([^\n]*)', 
         re.IGNORECASE
     )
     
@@ -210,11 +210,33 @@ def parse_quota(text):
     gemini_sec = ""
     claude_sec = ""
     
-    parts = re.split(r'CLAUDE AND GPT MODELS', text, flags=re.IGNORECASE)
-    if len(parts) > 0:
-        gemini_sec = parts[0]
-    if len(parts) > 1:
-        claude_sec = parts[1]
+    # Extract the LAST occurrence of GEMINI MODELS and CLAUDE AND GPT MODELS blocks
+    gemini_matches = list(re.finditer(r'GEMINI MODELS', text, flags=re.IGNORECASE))
+    claude_matches = list(re.finditer(r'CLAUDE (?:AND|&) GPT MODELS', text, flags=re.IGNORECASE))
+    
+    if gemini_matches and claude_matches:
+        last_g_pos = gemini_matches[-1].start()
+        last_c_pos = claude_matches[-1].start()
+        
+        if last_g_pos < last_c_pos:
+            gemini_sec = text[last_g_pos:last_c_pos]
+            claude_sec = text[last_c_pos:]
+        else:
+            claude_sec = text[last_c_pos:last_g_pos]
+            gemini_sec = text[last_g_pos:]
+    elif gemini_matches:
+        gemini_sec = text[gemini_matches[-1].start():]
+        claude_sec = ""
+    elif claude_matches:
+        gemini_sec = ""
+        claude_sec = text[claude_matches[-1].start():]
+    else:
+        # Fallback to simple split
+        parts = re.split(r'CLAUDE (?:AND|&) GPT MODELS', text, flags=re.IGNORECASE)
+        if len(parts) > 0:
+            gemini_sec = parts[0]
+        if len(parts) > 1:
+            claude_sec = parts[-1]
         
     gemini_data = parse_section_robust(gemini_sec)
     for k, v in gemini_data.items():
@@ -355,6 +377,40 @@ def fetch_quota_from_agy():
         except Exception:
             pass
 
+def update_cache_with_data(data):
+    with cache_lock:
+        if data.get("error_type", "None") != "None":
+            quota_cache["status"] = "Error"
+            quota_cache["error_type"] = data.get("error_type", "UNKNOWN_ERROR")
+            quota_cache["error_message"] = data.get("error_message", "Scraper encountered an error")
+            quota_cache["cli_found"] = data.get("cli_found", True)
+            quota_cache["cli_path"] = data.get("cli_path", "")
+        else:
+            quota_cache.update(data)
+            quota_cache["last_updated"] = int(time.time())
+            quota_cache["status"] = "OK"
+            quota_cache["error_type"] = "None"
+            quota_cache["error_message"] = ""
+            
+            g_w_rem = quota_cache.get("gemini_weekly_percentage", 100.0)
+            g_5_rem = quota_cache.get("gemini_five_hour_percentage", 100.0)
+            c_w_rem = quota_cache.get("claude_weekly_percentage", 100.0)
+            c_5_rem = quota_cache.get("claude_five_hour_percentage", 100.0)
+
+            history_entry = {
+                "timestamp": quota_cache["last_updated"],
+                "gemini_weekly_used": round(max(0.0, 100.0 - g_w_rem), 1),
+                "gemini_five_hour_used": round(max(0.0, 100.0 - g_5_rem), 1),
+                "claude_weekly_used": round(max(0.0, 100.0 - c_w_rem), 1),
+                "claude_five_hour_used": round(max(0.0, 100.0 - c_5_rem), 1),
+
+                "gemini_weekly": round(max(0.0, 100.0 - g_w_rem), 1),
+                "gemini_five_hour": round(max(0.0, 100.0 - g_5_rem), 1),
+                "claude_weekly": round(max(0.0, 100.0 - c_w_rem), 1),
+                "claude_five_hour": round(max(0.0, 100.0 - c_5_rem), 1)
+            }
+            save_history(history_entry)
+
 def quota_loader_loop():
     global quota_cache
     print("Background quota loader started.", flush=True)
@@ -362,42 +418,8 @@ def quota_loader_loop():
         try:
             print("Updating quota cache from agy...", flush=True)
             data = fetch_quota_from_agy()
-            
-            with cache_lock:
-                if data.get("error_type", "None") != "None":
-                    quota_cache["status"] = "Error"
-                    quota_cache["error_type"] = data.get("error_type", "UNKNOWN_ERROR")
-                    quota_cache["error_message"] = data.get("error_message", "Scraper encountered an error")
-                    quota_cache["cli_found"] = data.get("cli_found", True)
-                    quota_cache["cli_path"] = data.get("cli_path", "")
-                else:
-                    quota_cache.update(data)
-                    quota_cache["last_updated"] = int(time.time())
-                    quota_cache["status"] = "OK"
-                    quota_cache["error_type"] = "None"
-                    quota_cache["error_message"] = ""
-                    
-                    g_w_rem = quota_cache.get("gemini_weekly_percentage", 100.0)
-                    g_5_rem = quota_cache.get("gemini_five_hour_percentage", 100.0)
-                    c_w_rem = quota_cache.get("claude_weekly_percentage", 100.0)
-                    c_5_rem = quota_cache.get("claude_five_hour_percentage", 100.0)
-
-                    history_entry = {
-                        "timestamp": quota_cache["last_updated"],
-                        "gemini_weekly_used": round(max(0.0, 100.0 - g_w_rem), 1),
-                        "gemini_five_hour_used": round(max(0.0, 100.0 - g_5_rem), 1),
-                        "claude_weekly_used": round(max(0.0, 100.0 - c_w_rem), 1),
-                        "claude_five_hour_used": round(max(0.0, 100.0 - c_5_rem), 1),
-
-                        "gemini_weekly": round(max(0.0, 100.0 - g_w_rem), 1),
-                        "gemini_five_hour": round(max(0.0, 100.0 - g_5_rem), 1),
-                        "claude_weekly": round(max(0.0, 100.0 - c_w_rem), 1),
-                        "claude_five_hour": round(max(0.0, 100.0 - c_5_rem), 1)
-                    }
-                    save_history(history_entry)
-                    
+            update_cache_with_data(data)
             print(f"Quota cache status: {quota_cache['status']}", flush=True)
-            
         except Exception as e:
             print(f"Error loading quota: {e}", flush=True)
             with cache_lock:
@@ -405,7 +427,7 @@ def quota_loader_loop():
                 quota_cache["error_type"] = "UNHANDLED_EXCEPTION"
                 quota_cache["error_message"] = str(e)
                 
-        time.sleep(300)
+        time.sleep(60)
 
 DASHBOARD_HTML = """<!DOCTYPE html>
 <html lang="en">
@@ -1013,6 +1035,23 @@ class QuotaHandler(BaseHTTPRequestHandler):
             self.wfile.write(DASHBOARD_HTML.encode('utf-8'))
             
         elif path == '/usage':
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Access-Control-Allow-Methods', 'GET, OPTIONS')
+            self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+            self.end_headers()
+            
+            with cache_lock:
+                response_data = json.dumps(quota_cache)
+                
+            self.wfile.write(response_data.encode('utf-8'))
+            
+        elif path == '/refresh':
+            # Perform immediate scraping on demand
+            data = fetch_quota_from_agy()
+            update_cache_with_data(data)
+            
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Access-Control-Allow-Origin', '*')
