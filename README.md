@@ -3,7 +3,7 @@
 [![macOS](https://img.shields.io/badge/OS-macOS-lightgrey.svg?style=flat&logo=apple)](https://www.apple.com/macos/)
 [![Swift](https://img.shields.io/badge/Swift-5.0+-orange.svg?style=flat&logo=swift)](https://swift.org)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg?style=flat&logo=python)](https://www.python.org)
-[![Release](https://img.shields.io/badge/Release-v1.6.0-brightgreen.svg)](https://github.com/ktw1982-coder/antigravity-usage-extension/releases/tag/v1.6.0)
+[![Release](https://img.shields.io/badge/Release-v1.6.1-brightgreen.svg)](https://github.com/ktw1982-coder/antigravity-usage-extension/releases/tag/v1.6.1)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A lightweight native macOS Menu Bar application, Web Analytics Dashboard, and Chrome Extension designed to monitor real-time quota usage for **Google Antigravity (AGY)** models (Gemini, Claude, and GPT).
