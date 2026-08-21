@@ -305,19 +305,21 @@ def fetch_quota_from_agy():
         
     os.close(slave)
     
-    def read_available(timeout=5):
+    def read_available(timeout=3):
         res = []
-        start_time = time.time()
-        while time.time() - start_time < timeout:
-            r, _, _ = select.select([master], [], [], 0.2)
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            r, _, _ = select.select([master], [], [], 0.3)
             if master in r:
                 try:
                     data = os.read(master, 4096)
                     if not data:
                         break
                     res.append(data)
-                    start_time = time.time()
                 except OSError:
+                    break
+            else:
+                if res:
                     break
         return b"".join(res)
         
