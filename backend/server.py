@@ -12,6 +12,12 @@ import threading
 import json
 import urllib.parse
 from http.server import HTTPServer, BaseHTTPRequestHandler
+try:
+    from http.server import ThreadingHTTPServer
+except ImportError:
+    ThreadingHTTPServer = HTTPServer
+
+scraping_lock = threading.Lock()
 
 # Global Cache for Quota Data
 quota_cache = {
@@ -411,13 +417,17 @@ def update_cache_with_data(data):
             }
             save_history(history_entry)
 
+def safe_fetch_quota_from_agy():
+    with scraping_lock:
+        return fetch_quota_from_agy()
+
 def quota_loader_loop():
     global quota_cache
     print("Background quota loader started.", flush=True)
     while True:
         try:
             print("Updating quota cache from agy...", flush=True)
-            data = fetch_quota_from_agy()
+            data = safe_fetch_quota_from_agy()
             update_cache_with_data(data)
             print(f"Quota cache status: {quota_cache['status']}", flush=True)
         except Exception as e:
@@ -1049,7 +1059,7 @@ class QuotaHandler(BaseHTTPRequestHandler):
             
         elif path == '/refresh':
             # Perform immediate scraping on demand
-            data = fetch_quota_from_agy()
+            data = safe_fetch_quota_from_agy()
             update_cache_with_data(data)
             
             self.send_response(200)
@@ -1117,7 +1127,7 @@ def run_server(port=8484, parent_pid=None):
     loader_thread.start()
     
     server_address = ('', port)
-    httpd = HTTPServer(server_address, QuotaHandler)
+    httpd = ThreadingHTTPServer(server_address, QuotaHandler)
     print(f"Server running on port {port}...", flush=True)
     print(f"Dashboard available at http://localhost:{port}/dashboard", flush=True)
     try:
