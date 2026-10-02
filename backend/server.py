@@ -141,9 +141,12 @@ def parse_section_robust(sec_text):
                 if len(parts) > 1:
                     sec_data["weekly_refresh"] = parts[1].replace('Refreshes in', '').replace('refreshes in', '').strip()
             elif "refreshes in" in details.lower():
-                sec_data["weekly_percentage"] = 0.0
-                sec_data["weekly_remaining"] = "0% remaining"
-                sec_data["weekly_refresh"] = details.lower().replace('refreshes in', '').strip()
+                sec_data["weekly_refresh"] = re.sub(r'refreshes in\s*', '', details, flags=re.IGNORECASE).strip()
+                if sec_data["weekly_percentage"] > 0.0:
+                    sec_data["weekly_remaining"] = f"{round(sec_data['weekly_percentage'])}% remaining"
+                else:
+                    sec_data["weekly_percentage"] = 0.0
+                    sec_data["weekly_remaining"] = "0% remaining"
             elif "quota available" in details.lower():
                 sec_data["weekly_percentage"] = 100.0
                 sec_data["weekly_remaining"] = "Quota Available"
@@ -181,9 +184,12 @@ def parse_section_robust(sec_text):
                 if len(parts) > 1:
                     sec_data["five_hour_refresh"] = parts[1].replace('Refreshes in', '').replace('refreshes in', '').strip()
             elif "refreshes in" in details.lower():
-                sec_data["five_hour_percentage"] = 0.0
-                sec_data["five_hour_remaining"] = "0% remaining"
-                sec_data["five_hour_refresh"] = details.lower().replace('refreshes in', '').strip()
+                sec_data["five_hour_refresh"] = re.sub(r'refreshes in\s*', '', details, flags=re.IGNORECASE).strip()
+                if sec_data["five_hour_percentage"] > 0.0:
+                    sec_data["five_hour_remaining"] = f"{round(sec_data['five_hour_percentage'])}% remaining"
+                else:
+                    sec_data["five_hour_percentage"] = 0.0
+                    sec_data["five_hour_remaining"] = "0% remaining"
             elif "quota available" in details.lower():
                 sec_data["five_hour_percentage"] = 100.0
                 sec_data["five_hour_remaining"] = "Quota Available"
@@ -199,13 +205,9 @@ def parse_section_robust(sec_text):
     sec_data["weekly_refresh"] = format_refresh_time(sec_data["weekly_refresh"])
     sec_data["five_hour_refresh"] = format_refresh_time(sec_data["five_hour_refresh"])
 
-    # If Weekly Quota is completely exhausted (0% remaining / 100% used),
+    # If Weekly Quota is truly completely exhausted (0% remaining / 100% used),
     # force 5-Hour Quota to 0% remaining (100% used) as it's effectively blocked.
-    if sec_data["weekly_percentage"] == 0.0 and "quota available" not in sec_data["weekly_remaining"].lower() and (
-        "refreshes in" in sec_data["weekly_remaining"].lower() or 
-        "0%" in sec_data["weekly_remaining"].lower() or 
-        sec_data["weekly_refresh"] != "--"
-    ):
+    if sec_data["weekly_percentage"] == 0.0 and "0%" in sec_data["weekly_remaining"].lower() and "quota available" not in sec_data["weekly_remaining"].lower():
         sec_data["five_hour_percentage"] = 0.0
         sec_data["five_hour_remaining"] = "0% remaining (Weekly Depleted)"
 
