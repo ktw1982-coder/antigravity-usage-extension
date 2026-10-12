@@ -47,9 +47,32 @@ quota_cache = {
 
 cache_lock = threading.Lock()
 history_lock = threading.Lock()
-HISTORY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "history.json")
+APP_SUPPORT_DIR = os.path.expanduser("~/Library/Application Support/AntigravityMonitor")
+try:
+    os.makedirs(APP_SUPPORT_DIR, exist_ok=True)
+except Exception:
+    pass
+
+HISTORY_FILE = os.path.join(APP_SUPPORT_DIR, "history.json")
 
 def load_history():
+    if not os.path.exists(HISTORY_FILE):
+        # Migrate from legacy paths if available
+        legacy_paths = [
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "history.json"),
+            os.path.expanduser("~/.antigravity_history.json")
+        ]
+        for old_p in legacy_paths:
+            if os.path.exists(old_p):
+                try:
+                    with open(old_p, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        if data and isinstance(data, list):
+                            with open(HISTORY_FILE, "w", encoding="utf-8") as wf:
+                                json.dump(data, wf, ensure_ascii=False, indent=2)
+                            return data
+                except Exception:
+                    pass
     if os.path.exists(HISTORY_FILE):
         try:
             with open(HISTORY_FILE, "r", encoding="utf-8") as f:
@@ -62,9 +85,9 @@ def save_history(entry):
     with history_lock:
         history = load_history()
         history.append(entry)
-        # Keep last 2016 data points (approx 7 days assuming 5-min intervals)
-        if len(history) > 2016:
-            history = history[-2016:]
+        # Keep last 10080 data points (approx 7 days at 1-min intervals)
+        if len(history) > 10080:
+            history = history[-10080:]
         try:
             with open(HISTORY_FILE, "w", encoding="utf-8") as f:
                 json.dump(history, f, ensure_ascii=False, indent=2)
@@ -916,21 +939,66 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         }
 
         function renderChart(historyData) {
+            const now = Math.floor(Date.now() / 1000);
             const filtered = filterHistoryByRange(historyData, currentRange);
 
-            const labels = filtered.map(h => {
-                const d = new Date(h.timestamp * 1000);
-                if (currentRange === '1H' || currentRange === '6H' || currentRange === '24H') {
+            let rangeSeconds = 86400;
+            let isShortTime = true;
+            if (currentRange === '1H') { rangeSeconds = 3600; isShortTime = true; }
+            else if (currentRange === '6H') { rangeSeconds = 21600; isShortTime = true; }
+            else if (currentRange === '24H') { rangeSeconds = 86400; isShortTime = true; }
+            else if (currentRange === '7D') { rangeSeconds = 604800; isShortTime = false; }
+            else if (currentRange === 'ALL') {
+                rangeSeconds = filtered.length > 1 ? (now - filtered[0].timestamp) : 86400;
+                isShortTime = rangeSeconds <= 86400;
+            }
+
+            const startTime = now - rangeSeconds;
+
+            // Update subtitle with accurate range and sample count
+            const subTitleEl = document.querySelector('.chart-subtitle');
+            if (subTitleEl) {
+                subTitleEl.textContent = `(${currentRange} window · ${filtered.length} points recorded)`;
+            }
+
+            // Build display points with start anchor if data started recently
+            const allPoints = [];
+            filtered.forEach(h => {
+                allPoints.push({
+                    t: h.timestamp,
+                    gW: h.gemini_weekly_used !== undefined ? h.gemini_weekly_used : (h.gemini_weekly || 0),
+                    g5: h.gemini_five_hour_used !== undefined ? h.gemini_five_hour_used : (h.gemini_five_hour || 0),
+                    cW: h.claude_weekly_used !== undefined ? h.claude_weekly_used : (h.claude_weekly || 0),
+                    c5: h.claude_five_hour_used !== undefined ? h.claude_five_hour_used : (h.claude_five_hour || 0)
+                });
+            });
+
+            // If we have recorded points but they only span the tail of the selected window,
+            // add an anchor at the start of the window so the timeline spans the full window
+            if (allPoints.length > 0 && allPoints[0].t > (startTime + 300) && currentRange !== 'ALL') {
+                allPoints.unshift({
+                    t: startTime,
+                    gW: null,
+                    g5: null,
+                    cW: null,
+                    c5: null
+                });
+            }
+
+            const formatLabel = (ts) => {
+                const d = new Date(ts * 1000);
+                if (isShortTime) {
                     return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
                 } else {
                     return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours().toString().padStart(2, '0')}:00`;
                 }
-            });
+            };
 
-            const gWeeklyUsed = filtered.map(h => h.gemini_weekly_used !== undefined ? h.gemini_weekly_used : (h.gemini_weekly || 0));
-            const gFiveHourUsed = filtered.map(h => h.gemini_five_hour_used !== undefined ? h.gemini_five_hour_used : (h.gemini_five_hour || 0));
-            const cWeeklyUsed = filtered.map(h => h.claude_weekly_used !== undefined ? h.claude_weekly_used : (h.claude_weekly || 0));
-            const cFiveHourUsed = filtered.map(h => h.claude_five_hour_used !== undefined ? h.claude_five_hour_used : (h.claude_five_hour || 0));
+            const labels = allPoints.length > 0 ? allPoints.map(p => formatLabel(p.t)) : [formatLabel(startTime), formatLabel(now)];
+            const gWeeklyUsed = allPoints.length > 0 ? allPoints.map(p => p.gW) : [0, 0];
+            const gFiveHourUsed = allPoints.length > 0 ? allPoints.map(p => p.g5) : [0, 0];
+            const cWeeklyUsed = allPoints.length > 0 ? allPoints.map(p => p.cW) : [0, 0];
+            const cFiveHourUsed = allPoints.length > 0 ? allPoints.map(p => p.c5) : [0, 0];
 
             const ctx = document.getElementById('trendChart').getContext('2d');
 
@@ -941,43 +1009,55 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             chartInstance = new Chart(ctx, {
                 type: 'line',
                 data: {
-                    labels: labels.length > 0 ? labels : ['Now'],
+                    labels: labels,
                     datasets: [
                         {
                             label: 'Gemini Weekly Used %',
-                            data: gWeeklyUsed.length > 0 ? gWeeklyUsed : [0],
+                            data: gWeeklyUsed,
                             borderColor: '#38bdf8',
                             backgroundColor: 'rgba(56, 189, 248, 0.15)',
                             fill: true,
-                            tension: 0.35,
-                            borderWidth: 2.5
+                            spanGaps: true,
+                            tension: 0.25,
+                            borderWidth: 2.5,
+                            pointRadius: 3,
+                            pointHoverRadius: 6
                         },
                         {
                             label: 'Gemini 5-Hour Used %',
-                            data: gFiveHourUsed.length > 0 ? gFiveHourUsed : [0],
+                            data: gFiveHourUsed,
                             borderColor: '#818cf8',
                             backgroundColor: 'transparent',
                             borderDash: [4, 4],
-                            tension: 0.35,
-                            borderWidth: 2
+                            spanGaps: true,
+                            tension: 0.25,
+                            borderWidth: 2,
+                            pointRadius: 3,
+                            pointHoverRadius: 6
                         },
                         {
                             label: 'Claude Weekly Used %',
-                            data: cWeeklyUsed.length > 0 ? cWeeklyUsed : [0],
+                            data: cWeeklyUsed,
                             borderColor: '#a855f7',
                             backgroundColor: 'rgba(168, 85, 247, 0.15)',
                             fill: true,
-                            tension: 0.35,
-                            borderWidth: 2.5
+                            spanGaps: true,
+                            tension: 0.25,
+                            borderWidth: 2.5,
+                            pointRadius: 3,
+                            pointHoverRadius: 6
                         },
                         {
                             label: 'Claude 5-Hour Used %',
-                            data: cFiveHourUsed.length > 0 ? cFiveHourUsed : [0],
+                            data: cFiveHourUsed,
                             borderColor: '#ec4899',
                             backgroundColor: 'transparent',
                             borderDash: [4, 4],
-                            tension: 0.35,
-                            borderWidth: 2
+                            spanGaps: true,
+                            tension: 0.25,
+                            borderWidth: 2,
+                            pointRadius: 3,
+                            pointHoverRadius: 6
                         }
                     ]
                 },
