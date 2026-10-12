@@ -943,14 +943,12 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             const filtered = filterHistoryByRange(historyData, currentRange);
 
             let rangeSeconds = 86400;
-            let isShortTime = true;
-            if (currentRange === '1H') { rangeSeconds = 3600; isShortTime = true; }
-            else if (currentRange === '6H') { rangeSeconds = 21600; isShortTime = true; }
-            else if (currentRange === '24H') { rangeSeconds = 86400; isShortTime = true; }
-            else if (currentRange === '7D') { rangeSeconds = 604800; isShortTime = false; }
+            if (currentRange === '1H') rangeSeconds = 3600;
+            else if (currentRange === '6H') rangeSeconds = 21600;
+            else if (currentRange === '24H') rangeSeconds = 86400;
+            else if (currentRange === '7D') rangeSeconds = 604800;
             else if (currentRange === 'ALL') {
-                rangeSeconds = filtered.length > 1 ? (now - filtered[0].timestamp) : 86400;
-                isShortTime = rangeSeconds <= 86400;
+                rangeSeconds = filtered.length > 1 ? Math.max(3600, (now - filtered[0].timestamp)) : 86400;
             }
 
             const startTime = now - rangeSeconds;
@@ -961,44 +959,23 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 subTitleEl.textContent = `(${currentRange} window · ${filtered.length} points recorded)`;
             }
 
-            // Build display points with start anchor if data started recently
-            const allPoints = [];
-            filtered.forEach(h => {
-                allPoints.push({
-                    t: h.timestamp,
-                    gW: h.gemini_weekly_used !== undefined ? h.gemini_weekly_used : (h.gemini_weekly || 0),
-                    g5: h.gemini_five_hour_used !== undefined ? h.gemini_five_hour_used : (h.gemini_five_hour || 0),
-                    cW: h.claude_weekly_used !== undefined ? h.claude_weekly_used : (h.claude_weekly || 0),
-                    c5: h.claude_five_hour_used !== undefined ? h.claude_five_hour_used : (h.claude_five_hour || 0)
-                });
-            });
-
-            // If we have recorded points but they only span the tail of the selected window,
-            // add an anchor at the start of the window so the timeline spans the full window
-            if (allPoints.length > 0 && allPoints[0].t > (startTime + 300) && currentRange !== 'ALL') {
-                allPoints.unshift({
-                    t: startTime,
-                    gW: null,
-                    g5: null,
-                    cW: null,
-                    c5: null
-                });
-            }
-
-            const formatLabel = (ts) => {
-                const d = new Date(ts * 1000);
-                if (isShortTime) {
-                    return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-                } else {
-                    return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours().toString().padStart(2, '0')}:00`;
-                }
-            };
-
-            const labels = allPoints.length > 0 ? allPoints.map(p => formatLabel(p.t)) : [formatLabel(startTime), formatLabel(now)];
-            const gWeeklyUsed = allPoints.length > 0 ? allPoints.map(p => p.gW) : [0, 0];
-            const gFiveHourUsed = allPoints.length > 0 ? allPoints.map(p => p.g5) : [0, 0];
-            const cWeeklyUsed = allPoints.length > 0 ? allPoints.map(p => p.cW) : [0, 0];
-            const cFiveHourUsed = allPoints.length > 0 ? allPoints.map(p => p.c5) : [0, 0];
+            // Convert to {x, y} coordinate points for real linear time scale
+            const gWeeklyPoints = filtered.map(h => ({
+                x: h.timestamp * 1000,
+                y: h.gemini_weekly_used !== undefined ? h.gemini_weekly_used : (h.gemini_weekly || 0)
+            }));
+            const gFiveHourPoints = filtered.map(h => ({
+                x: h.timestamp * 1000,
+                y: h.gemini_five_hour_used !== undefined ? h.gemini_five_hour_used : (h.gemini_five_hour || 0)
+            }));
+            const cWeeklyPoints = filtered.map(h => ({
+                x: h.timestamp * 1000,
+                y: h.claude_weekly_used !== undefined ? h.claude_weekly_used : (h.claude_weekly || 0)
+            }));
+            const cFiveHourPoints = filtered.map(h => ({
+                x: h.timestamp * 1000,
+                y: h.claude_five_hour_used !== undefined ? h.claude_five_hour_used : (h.claude_five_hour || 0)
+            }));
 
             const ctx = document.getElementById('trendChart').getContext('2d');
 
@@ -1009,54 +986,49 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             chartInstance = new Chart(ctx, {
                 type: 'line',
                 data: {
-                    labels: labels,
                     datasets: [
                         {
                             label: 'Gemini Weekly Used %',
-                            data: gWeeklyUsed,
+                            data: gWeeklyPoints,
                             borderColor: '#38bdf8',
                             backgroundColor: 'rgba(56, 189, 248, 0.15)',
                             fill: true,
-                            spanGaps: true,
-                            tension: 0.25,
+                            tension: 0.2,
                             borderWidth: 2.5,
-                            pointRadius: 3,
+                            pointRadius: filtered.length > 50 ? 1 : 4,
                             pointHoverRadius: 6
                         },
                         {
                             label: 'Gemini 5-Hour Used %',
-                            data: gFiveHourUsed,
+                            data: gFiveHourPoints,
                             borderColor: '#818cf8',
                             backgroundColor: 'transparent',
                             borderDash: [4, 4],
-                            spanGaps: true,
-                            tension: 0.25,
+                            tension: 0.2,
                             borderWidth: 2,
-                            pointRadius: 3,
+                            pointRadius: filtered.length > 50 ? 1 : 4,
                             pointHoverRadius: 6
                         },
                         {
                             label: 'Claude Weekly Used %',
-                            data: cWeeklyUsed,
+                            data: cWeeklyPoints,
                             borderColor: '#a855f7',
                             backgroundColor: 'rgba(168, 85, 247, 0.15)',
                             fill: true,
-                            spanGaps: true,
-                            tension: 0.25,
+                            tension: 0.2,
                             borderWidth: 2.5,
-                            pointRadius: 3,
+                            pointRadius: filtered.length > 50 ? 1 : 4,
                             pointHoverRadius: 6
                         },
                         {
                             label: 'Claude 5-Hour Used %',
-                            data: cFiveHourUsed,
+                            data: cFiveHourPoints,
                             borderColor: '#ec4899',
                             backgroundColor: 'transparent',
                             borderDash: [4, 4],
-                            spanGaps: true,
-                            tension: 0.25,
+                            tension: 0.2,
                             borderWidth: 2,
-                            pointRadius: 3,
+                            pointRadius: filtered.length > 50 ? 1 : 4,
                             pointHoverRadius: 6
                         }
                     ]
@@ -1065,16 +1037,30 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                     responsive: true,
                     maintainAspectRatio: false,
                     animation: {
-                        duration: 400
+                        duration: 300
                     },
                     interaction: {
-                        mode: 'index',
+                        mode: 'nearest',
+                        axis: 'x',
                         intersect: false,
                     },
                     scales: {
                         x: {
+                            type: 'linear',
+                            min: startTime * 1000,
+                            max: now * 1000,
                             grid: { color: 'rgba(255, 255, 255, 0.05)' },
-                            ticks: { color: '#94a3b8' }
+                            ticks: {
+                                color: '#94a3b8',
+                                maxTicksLimit: currentRange === '1H' ? 6 : (currentRange === '6H' ? 7 : (currentRange === '24H' ? 8 : 7)),
+                                callback: function(val) {
+                                    const d = new Date(val);
+                                    if (currentRange === '7D' || (currentRange === 'ALL' && (now - startTime) > 86400)) {
+                                        return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours().toString().padStart(2, '0')}:00`;
+                                    }
+                                    return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+                                }
+                            }
                         },
                         y: {
                             min: 0,
@@ -1102,12 +1088,20 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                             borderColor: '#334155',
                             borderWidth: 1,
                             callbacks: {
+                                title: function(items) {
+                                    if (!items.length) return '';
+                                    const d = new Date(items[0].parsed.x);
+                                    return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+                                },
                                 label: function(context) {
-                                    return `${context.dataset.label}: ${context.raw}% Used`;
+                                    return `${context.dataset.label}: ${context.parsed.y.toFixed(1)}% Used`;
                                 }
                             }
                         }
                     }
+                }
+            });
+        }
                 }
             });
         }
