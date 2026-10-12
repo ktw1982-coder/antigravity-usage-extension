@@ -912,6 +912,10 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 }
             } catch (err) {
                 console.error("Failed to fetch current usage:", err);
+                const updateEl = document.getElementById('update-time');
+                if (updateEl && updateEl.textContent === 'Updating...') {
+                    updateEl.textContent = 'Retrying...';
+                }
             }
         }
 
@@ -939,49 +943,50 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         }
 
         function renderChart(historyData) {
-            const now = Math.floor(Date.now() / 1000);
-            const filtered = filterHistoryByRange(historyData, currentRange);
+            try {
+                const now = Math.floor(Date.now() / 1000);
+                const filtered = filterHistoryByRange(historyData, currentRange);
 
-            let rangeSeconds = 86400;
-            if (currentRange === '1H') rangeSeconds = 3600;
-            else if (currentRange === '6H') rangeSeconds = 21600;
-            else if (currentRange === '24H') rangeSeconds = 86400;
-            else if (currentRange === '7D') rangeSeconds = 604800;
-            else if (currentRange === 'ALL') {
-                rangeSeconds = filtered.length > 1 ? Math.max(3600, (now - filtered[0].timestamp)) : 86400;
-            }
+                let rangeSeconds = 86400;
+                if (currentRange === '1H') rangeSeconds = 3600;
+                else if (currentRange === '6H') rangeSeconds = 21600;
+                else if (currentRange === '24H') rangeSeconds = 86400;
+                else if (currentRange === '7D') rangeSeconds = 604800;
+                else if (currentRange === 'ALL') {
+                    rangeSeconds = filtered.length > 1 ? Math.max(3600, (now - filtered[0].timestamp)) : 86400;
+                }
 
-            const startTime = now - rangeSeconds;
+                const startTime = now - rangeSeconds;
 
-            // Update subtitle with accurate range and sample count
-            const subTitleEl = document.querySelector('.chart-subtitle');
-            if (subTitleEl) {
-                subTitleEl.textContent = `(${currentRange} window · ${filtered.length} points recorded)`;
-            }
+                // Update subtitle with accurate range and sample count
+                const subTitleEl = document.querySelector('.chart-subtitle');
+                if (subTitleEl) {
+                    subTitleEl.textContent = `(${currentRange} window · ${filtered.length} points recorded)`;
+                }
 
-            // Convert to {x, y} coordinate points for real linear time scale
-            const gWeeklyPoints = filtered.map(h => ({
-                x: h.timestamp * 1000,
-                y: h.gemini_weekly_used !== undefined ? h.gemini_weekly_used : (h.gemini_weekly || 0)
-            }));
-            const gFiveHourPoints = filtered.map(h => ({
-                x: h.timestamp * 1000,
-                y: h.gemini_five_hour_used !== undefined ? h.gemini_five_hour_used : (h.gemini_five_hour || 0)
-            }));
-            const cWeeklyPoints = filtered.map(h => ({
-                x: h.timestamp * 1000,
-                y: h.claude_weekly_used !== undefined ? h.claude_weekly_used : (h.claude_weekly || 0)
-            }));
-            const cFiveHourPoints = filtered.map(h => ({
-                x: h.timestamp * 1000,
-                y: h.claude_five_hour_used !== undefined ? h.claude_five_hour_used : (h.claude_five_hour || 0)
-            }));
+                // Convert to {x, y} coordinate points for real linear time scale
+                const gWeeklyPoints = filtered.map(h => ({
+                    x: h.timestamp * 1000,
+                    y: h.gemini_weekly_used !== undefined ? h.gemini_weekly_used : (h.gemini_weekly || 0)
+                }));
+                const gFiveHourPoints = filtered.map(h => ({
+                    x: h.timestamp * 1000,
+                    y: h.gemini_five_hour_used !== undefined ? h.gemini_five_hour_used : (h.gemini_five_hour || 0)
+                }));
+                const cWeeklyPoints = filtered.map(h => ({
+                    x: h.timestamp * 1000,
+                    y: h.claude_weekly_used !== undefined ? h.claude_weekly_used : (h.claude_weekly || 0)
+                }));
+                const cFiveHourPoints = filtered.map(h => ({
+                    x: h.timestamp * 1000,
+                    y: h.claude_five_hour_used !== undefined ? h.claude_five_hour_used : (h.claude_five_hour || 0)
+                }));
 
-            const ctx = document.getElementById('trendChart').getContext('2d');
+                const ctx = document.getElementById('trendChart').getContext('2d');
 
-            if (chartInstance) {
-                chartInstance.destroy();
-            }
+                if (chartInstance) {
+                    chartInstance.destroy();
+                }
 
             chartInstance = new Chart(ctx, {
                 type: 'line',
@@ -1055,6 +1060,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                                 maxTicksLimit: currentRange === '1H' ? 6 : (currentRange === '6H' ? 7 : (currentRange === '24H' ? 8 : 7)),
                                 callback: function(val) {
                                     const d = new Date(val);
+                                    if (isNaN(d.getTime())) return '';
                                     if (currentRange === '7D' || (currentRange === 'ALL' && (now - startTime) > 86400)) {
                                         return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours().toString().padStart(2, '0')}:00`;
                                     }
@@ -1090,21 +1096,24 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                             callbacks: {
                                 title: function(items) {
                                     if (!items.length) return '';
-                                    const d = new Date(items[0].parsed.x);
-                                    return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+                                    const xVal = (items[0].parsed && items[0].parsed.x !== undefined) ? items[0].parsed.x : (items[0].raw ? items[0].raw.x : null);
+                                    if (!xVal) return '';
+                                    const d = new Date(xVal);
+                                    return isNaN(d.getTime()) ? '' : d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
                                 },
                                 label: function(context) {
-                                    return `${context.dataset.label}: ${context.parsed.y.toFixed(1)}% Used`;
+                                    const yVal = (context.parsed && context.parsed.y !== undefined) ? context.parsed.y : (context.raw ? context.raw.y : 0);
+                                    return `${context.dataset.label}: ${Number(yVal).toFixed(1)}% Used`;
                                 }
                             }
                         }
                     }
                 }
             });
+        } catch (err) {
+            console.error("Failed to render chart:", err);
         }
-                }
-            });
-        }
+    }
 
         async function fetchHistoryAndRenderChart() {
             try {
@@ -1117,12 +1126,24 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         }
 
         // Init
-        fetchMetrics();
-        fetchHistoryAndRenderChart();
+        try {
+            fetchMetrics();
+        } catch (e) {
+            console.error("fetchMetrics init error:", e);
+        }
+        try {
+            fetchHistoryAndRenderChart();
+        } catch (e) {
+            console.error("fetchHistoryAndRenderChart init error:", e);
+        }
 
         // Refresh periodically
-        setInterval(fetchMetrics, 10000);
-        setInterval(fetchHistoryAndRenderChart, 60000);
+        setInterval(() => {
+            fetchMetrics().catch(err => console.error("fetchMetrics interval error:", err));
+        }, 10000);
+        setInterval(() => {
+            fetchHistoryAndRenderChart().catch(err => console.error("fetchHistory interval error:", err));
+        }, 60000);
     </script>
 </body>
 </html>

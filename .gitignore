@@ -8,6 +8,7 @@ menubar/AntigravityMonitor.app
 menubar/AntigravityMonitor
 menubar/AppIcon.iconset
 menubar/*.zip
+*.zip
 
 # Logs & Scraped/Temporary files
 *.log
