@@ -416,9 +416,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     
     func restartTimer() {
         pollingTimer?.invalidate()
-        pollingTimer = Timer.scheduledTimer(withTimeInterval: currentInterval, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: currentInterval, repeats: true) { [weak self] _ in
             self?.fetchQuota()
         }
+        RunLoop.main.add(timer, forMode: .common)
+        pollingTimer = timer
     }
     
     func startBackendServer() {
@@ -502,6 +504,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                         self.isQuickRetrying = false
                         self.updateUI(with: quota)
                         self.checkNotifications(quota: quota)
+                        
+                        // Self-healing: if backend cached data is older than 3 minutes, automatically force refresh
+                        if let lastUpdated = quota.last_updated, lastUpdated > 0 {
+                            let now = Date().timeIntervalSince1970
+                            if (now - Double(lastUpdated)) > 180.0 && !forceRefresh {
+                                DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                                    self?.fetchQuota(forceRefresh: true)
+                                }
+                            }
+                        }
                     }
                 } catch {
                     self.updateUIWithError("JSON Parsing failed")

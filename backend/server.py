@@ -379,7 +379,11 @@ def fetch_quota_from_agy():
     finally:
         try:
             proc.terminate()
-            proc.wait(timeout=1)
+            try:
+                proc.wait(timeout=1)
+            except Exception:
+                proc.kill()
+                proc.wait(timeout=1)
         except Exception:
             pass
         try:
@@ -422,8 +426,19 @@ def update_cache_with_data(data):
             save_history(history_entry)
 
 def safe_fetch_quota_from_agy():
-    with scraping_lock:
+    acquired = scraping_lock.acquire(timeout=25)
+    if not acquired:
+        print("Scraping lock timeout: another scrape is in progress", flush=True)
+        return {
+            "error_type": "SCRAPER_BUSY",
+            "error_message": "Scraper is busy with another request",
+            "cli_found": True,
+            "cli_path": ""
+        }
+    try:
         return fetch_quota_from_agy()
+    finally:
+        scraping_lock.release()
 
 def quota_loader_loop():
     global quota_cache
@@ -866,6 +881,11 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 if (data.last_updated) {
                     const d = new Date(data.last_updated * 1000);
                     document.getElementById('update-time').textContent = `Live: ${d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}`;
+                    
+                    const ageSeconds = (Date.now() / 1000) - data.last_updated;
+                    if (ageSeconds > 150) {
+                        fetch('/refresh').catch(() => {});
+                    }
                 }
             } catch (err) {
                 console.error("Failed to fetch current usage:", err);
