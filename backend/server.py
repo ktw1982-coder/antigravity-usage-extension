@@ -248,9 +248,9 @@ def parse_quota(text):
     parsed = {}
     
     headers = [
-        ('gemini', list(re.finditer(r'GEMINI MODELS', text, flags=re.IGNORECASE))),
-        ('claude', list(re.finditer(r'CLAUDE (?:AND|&) GPT MODELS', text, flags=re.IGNORECASE))),
-        ('argon', list(re.finditer(r'(?:GEMINI 4 )?ARGON', text, flags=re.IGNORECASE)))
+        ('gemini', list(re.finditer(r'(?:^|\n)\s*GEMINI MODELS', text, flags=re.IGNORECASE))),
+        ('claude', list(re.finditer(r'(?:^|\n)\s*CLAUDE (?:AND|&) GPT MODELS', text, flags=re.IGNORECASE))),
+        ('argon', list(re.finditer(r'(?:^|\n)\s*(?:GEMINI\s+4\s+)?ARGON(?:\s+MODELS)?\s*\n', text, flags=re.IGNORECASE)))
     ]
     
     sections = []
