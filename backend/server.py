@@ -37,6 +37,14 @@ quota_cache = {
     "claude_five_hour_remaining": "0% remaining",
     "claude_five_hour_refresh": "Unknown",
     
+    # Gemini 4 Argon
+    "argon_weekly_percentage": 0.0,
+    "argon_weekly_remaining": "0% remaining",
+    "argon_weekly_refresh": "Unknown",
+    "argon_five_hour_percentage": 100.0,
+    "argon_five_hour_remaining": "Quota Available",
+    "argon_five_hour_refresh": "--",
+    
     "last_updated": 0,
     "status": "Initializing",
     "error_message": "",
@@ -238,44 +246,36 @@ def parse_section_robust(sec_text):
 
 def parse_quota(text):
     parsed = {}
-    gemini_sec = ""
-    claude_sec = ""
     
-    # Extract the LAST occurrence of GEMINI MODELS and CLAUDE AND GPT MODELS blocks
-    gemini_matches = list(re.finditer(r'GEMINI MODELS', text, flags=re.IGNORECASE))
-    claude_matches = list(re.finditer(r'CLAUDE (?:AND|&) GPT MODELS', text, flags=re.IGNORECASE))
+    headers = [
+        ('gemini', list(re.finditer(r'GEMINI MODELS', text, flags=re.IGNORECASE))),
+        ('claude', list(re.finditer(r'CLAUDE (?:AND|&) GPT MODELS', text, flags=re.IGNORECASE))),
+        ('argon', list(re.finditer(r'(?:GEMINI 4 )?ARGON', text, flags=re.IGNORECASE)))
+    ]
     
-    if gemini_matches and claude_matches:
-        last_g_pos = gemini_matches[-1].start()
-        last_c_pos = claude_matches[-1].start()
+    sections = []
+    for name, matches in headers:
+        if matches:
+            sections.append((matches[-1].start(), name))
+            
+    sections.sort(key=lambda x: x[0])
+    
+    extracted = {'gemini': '', 'claude': '', 'argon': ''}
+    for i, (pos, name) in enumerate(sections):
+        end_pos = sections[i+1][0] if i+1 < len(sections) else len(text)
+        extracted[name] = text[pos:end_pos]
         
-        if last_g_pos < last_c_pos:
-            gemini_sec = text[last_g_pos:last_c_pos]
-            claude_sec = text[last_c_pos:]
-        else:
-            claude_sec = text[last_c_pos:last_g_pos]
-            gemini_sec = text[last_g_pos:]
-    elif gemini_matches:
-        gemini_sec = text[gemini_matches[-1].start():]
-        claude_sec = ""
-    elif claude_matches:
-        gemini_sec = ""
-        claude_sec = text[claude_matches[-1].start():]
-    else:
-        # Fallback to simple split
-        parts = re.split(r'CLAUDE (?:AND|&) GPT MODELS', text, flags=re.IGNORECASE)
-        if len(parts) > 0:
-            gemini_sec = parts[0]
-        if len(parts) > 1:
-            claude_sec = parts[-1]
-        
-    gemini_data = parse_section_robust(gemini_sec)
+    gemini_data = parse_section_robust(extracted['gemini'])
     for k, v in gemini_data.items():
         parsed[f"gemini_{k}"] = v
         
-    claude_data = parse_section_robust(claude_sec)
+    claude_data = parse_section_robust(extracted['claude'])
     for k, v in claude_data.items():
         parsed[f"claude_{k}"] = v
+        
+    argon_data = parse_section_robust(extracted['argon'])
+    for k, v in argon_data.items():
+        parsed[f"argon_{k}"] = v
         
     return parsed
 
@@ -433,6 +433,7 @@ def update_cache_with_data(data):
             g_5_rem = quota_cache.get("gemini_five_hour_percentage", 100.0)
             c_w_rem = quota_cache.get("claude_weekly_percentage", 100.0)
             c_5_rem = quota_cache.get("claude_five_hour_percentage", 100.0)
+            a_w_rem = quota_cache.get("argon_weekly_percentage", 100.0)
 
             history_entry = {
                 "timestamp": quota_cache["last_updated"],
@@ -440,11 +441,13 @@ def update_cache_with_data(data):
                 "gemini_five_hour_used": round(max(0.0, 100.0 - g_5_rem), 1),
                 "claude_weekly_used": round(max(0.0, 100.0 - c_w_rem), 1),
                 "claude_five_hour_used": round(max(0.0, 100.0 - c_5_rem), 1),
+                "argon_weekly_used": round(max(0.0, 100.0 - a_w_rem), 1),
 
                 "gemini_weekly": round(max(0.0, 100.0 - g_w_rem), 1),
                 "gemini_five_hour": round(max(0.0, 100.0 - g_5_rem), 1),
                 "claude_weekly": round(max(0.0, 100.0 - c_w_rem), 1),
-                "claude_five_hour": round(max(0.0, 100.0 - c_5_rem), 1)
+                "claude_five_hour": round(max(0.0, 100.0 - c_5_rem), 1),
+                "argon_weekly": round(max(0.0, 100.0 - a_w_rem), 1)
             }
             save_history(history_entry)
 
@@ -498,6 +501,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             --text-muted: #94a3b8;
             --accent-gemini: #38bdf8;
             --accent-claude: #a855f7;
+            --accent-argon: #06b6d4;
             --accent-warning: #f59e0b;
             --accent-danger: #ef4444;
         }
@@ -601,6 +605,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 
         .card.gemini::before { background: linear-gradient(90deg, var(--accent-gemini), #818cf8); }
         .card.claude::before { background: linear-gradient(90deg, var(--accent-claude), #ec4899); }
+        .card.argon::before { background: linear-gradient(90deg, var(--accent-argon), #3b82f6); }
 
         .card-header {
             font-size: 0.85rem;
@@ -649,6 +654,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 
         .card.gemini .progress-bar-fill { background: var(--accent-gemini); }
         .card.claude .progress-bar-fill { background: var(--accent-claude); }
+        .card.argon .progress-bar-fill { background: var(--accent-argon); }
 
         .card-footer {
             font-size: 0.8rem;
@@ -830,6 +836,25 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                     <span id="c-5h-ref">Reset: --</span>
                 </div>
             </div>
+
+            <!-- Gemini 4 Argon Weekly -->
+            <div class="card argon">
+                <div class="card-header">
+                    <span>Gemini 4 Argon</span>
+                    <span>Used</span>
+                </div>
+                <div class="card-value-container">
+                    <div class="card-value" id="a-weekly-val">--%</div>
+                    <div class="card-value-label">Quota Used</div>
+                </div>
+                <div class="progress-bar-bg">
+                    <div class="progress-bar-fill" id="a-weekly-bar"></div>
+                </div>
+                <div class="card-footer">
+                    <span id="a-weekly-rem">-- remaining</span>
+                    <span id="a-weekly-ref">Reset: --</span>
+                </div>
+            </div>
         </div>
 
         <div class="chart-section">
@@ -900,6 +925,17 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 document.getElementById('c-5h-bar').style.width = `${c5_used}%`;
                 document.getElementById('c-5h-rem').textContent = data.claude_five_hour_remaining || 'Quota Available';
                 document.getElementById('c-5h-ref').textContent = `Reset: ${data.claude_five_hour_refresh || '--'}`;
+
+                // Gemini 4 Argon
+                const aW_rem = data.argon_weekly_percentage !== undefined ? data.argon_weekly_percentage : 100.0;
+                const aW_used = calcUsed(aW_rem);
+                const aValEl = document.getElementById('a-weekly-val');
+                if (aValEl) {
+                    aValEl.textContent = `${aW_used.toFixed(1)}%`;
+                    document.getElementById('a-weekly-bar').style.width = `${aW_used}%`;
+                    document.getElementById('a-weekly-rem').textContent = data.argon_weekly_remaining || 'Quota Available';
+                    document.getElementById('a-weekly-ref').textContent = `Reset: ${data.argon_weekly_refresh || '--'}`;
+                }
 
                 if (data.last_updated) {
                     const d = new Date(data.last_updated * 1000);
@@ -981,6 +1017,10 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                     x: h.timestamp * 1000,
                     y: h.claude_five_hour_used !== undefined ? h.claude_five_hour_used : (h.claude_five_hour || 0)
                 }));
+                const aWeeklyPoints = filtered.map(h => ({
+                    x: h.timestamp * 1000,
+                    y: h.argon_weekly_used !== undefined ? h.argon_weekly_used : (h.argon_weekly || 0)
+                }));
 
                 const ctx = document.getElementById('trendChart').getContext('2d');
 
@@ -1033,6 +1073,17 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                             borderDash: [4, 4],
                             tension: 0.2,
                             borderWidth: 2,
+                            pointRadius: filtered.length > 50 ? 1 : 4,
+                            pointHoverRadius: 6
+                        },
+                        {
+                            label: 'Argon Weekly Used %',
+                            data: aWeeklyPoints,
+                            borderColor: '#06b6d4',
+                            backgroundColor: 'rgba(6, 182, 212, 0.15)',
+                            fill: false,
+                            tension: 0.2,
+                            borderWidth: 2.5,
                             pointRadius: filtered.length > 50 ? 1 : 4,
                             pointHoverRadius: 6
                         }

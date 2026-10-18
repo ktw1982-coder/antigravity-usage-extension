@@ -19,6 +19,14 @@ struct QuotaData: Codable {
     let claude_five_hour_remaining: String?
     let claude_five_hour_refresh: String?
     
+    // Gemini 4 Argon
+    let argon_weekly_percentage: Double?
+    let argon_weekly_remaining: String?
+    let argon_weekly_refresh: String?
+    let argon_five_hour_percentage: Double?
+    let argon_five_hour_remaining: String?
+    let argon_five_hour_refresh: String?
+    
     let last_updated: Int?
     let status: String?
     let error_message: String?
@@ -43,6 +51,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     var claudeWeeklyBarMenuItem: NSMenuItem!
     var claudeFiveHourMenuItem: NSMenuItem!
     var claudeFiveHourBarMenuItem: NSMenuItem!
+    
+    var argonHeaderItem: NSMenuItem!
+    var argonWeeklyMenuItem: NSMenuItem!
+    var argonWeeklyBarMenuItem: NSMenuItem!
     
     var updatedMenuItem: NSMenuItem!
     var launchAtLoginMenuItem: NSMenuItem!
@@ -125,6 +137,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         menu.addItem(claudeWeeklyBarMenuItem)
         menu.addItem(claudeFiveHourMenuItem)
         menu.addItem(claudeFiveHourBarMenuItem)
+        
+        menu.addItem(NSMenuItem.separator())
+        
+        // -- Gemini 4 Argon Group --
+        argonHeaderItem = NSMenuItem(title: "── GEMINI 4 ARGON ──", action: nil, keyEquivalent: "")
+        argonWeeklyMenuItem = NSMenuItem(title: "Weekly: --%", action: nil, keyEquivalent: "")
+        argonWeeklyBarMenuItem = NSMenuItem(title: "  └─ [□□□□□□□□□□] (Used: 0%)", action: nil, keyEquivalent: "")
+        
+        argonHeaderItem.isEnabled = false
+        argonWeeklyMenuItem.isEnabled = false
+        argonWeeklyBarMenuItem.isEnabled = false
+        
+        menu.addItem(argonHeaderItem)
+        menu.addItem(argonWeeklyMenuItem)
+        menu.addItem(argonWeeklyBarMenuItem)
         
         menu.addItem(NSMenuItem.separator())
         
@@ -212,9 +239,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
     
     func checkNotifications(quota: QuotaData) {
-        let geminiPct = quota.gemini_weekly_percentage ?? 0.0
-        let claudePct = quota.claude_weekly_percentage ?? 0.0
-        let maxPct = max(geminiPct, claudePct)
+        let geminiPct = max(0.0, 100.0 - (quota.gemini_weekly_percentage ?? 100.0))
+        let claudePct = max(0.0, 100.0 - (quota.claude_weekly_percentage ?? 100.0))
+        let argonPct = max(0.0, 100.0 - (quota.argon_weekly_percentage ?? 100.0))
+        let maxPct = max(geminiPct, claudePct, argonPct)
         
         if maxPct >= 90.0 {
             if !notified90 {
@@ -283,6 +311,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             "Gemini 5-Hour",
             "Claude Weekly",
             "Claude 5-Hour",
+            "Gemini 4 Argon Weekly",
             "Most Critical (Max Used)"
         ])
         mPopUp.selectItem(at: selectedMetricIndex)
@@ -372,6 +401,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         let g5 = quota.gemini_five_hour_percentage ?? 100.0
         let cW = quota.claude_weekly_percentage ?? 100.0
         let c5 = quota.claude_five_hour_percentage ?? 100.0
+        let aW = quota.argon_weekly_percentage ?? 100.0
         
         var targetRemPct: Double = gW
         var metricTag: String = ""
@@ -390,7 +420,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             targetRemPct = c5
             metricTag = "C5H"
         case 4:
-            let metrics = [("GW", gW), ("G5H", g5), ("CW", cW), ("C5H", c5)]
+            targetRemPct = aW
+            metricTag = "ARG"
+        case 5:
+            let metrics = [("GW", gW), ("G5H", g5), ("CW", cW), ("C5H", c5), ("ARG", aW)]
             if let minPair = metrics.min(by: { $0.1 < $1.1 }) {
                 targetRemPct = minPair.1
                 metricTag = minPair.0
@@ -572,6 +605,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         claudeFiveHourMenuItem.title = "5-Hour: \(claudeFiveHourRem) (Refreshes in \(claudeFiveHourRef))"
         claudeFiveHourBarMenuItem.title = makeProgressBar(remainingPercent: quota.claude_five_hour_percentage)
         
+        let argonWeeklyRem = quota.argon_weekly_remaining ?? "--% remaining"
+        let argonWeeklyRef = quota.argon_weekly_refresh ?? "--"
+        argonWeeklyMenuItem.title = "Weekly: \(argonWeeklyRem) (Refreshes in \(argonWeeklyRef))"
+        argonWeeklyBarMenuItem.title = makeProgressBar(remainingPercent: quota.argon_weekly_percentage)
+        
         if let lastUpdatedTime = quota.last_updated, lastUpdatedTime > 0 {
             let date = Date(timeIntervalSince1970: TimeInterval(lastUpdatedTime))
             let formatter = DateFormatter()
@@ -597,6 +635,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         claudeWeeklyBarMenuItem.title = "  └─ [----------] (Offline)"
         claudeFiveHourMenuItem.title = "5-Hour: Offline"
         claudeFiveHourBarMenuItem.title = "  └─ [----------] (Offline)"
+        
+        argonWeeklyMenuItem.title = "Weekly: Offline"
+        argonWeeklyBarMenuItem.title = "  └─ [----------] (Offline)"
         
         updatedMenuItem.title = "Error: \(message)"
     }

@@ -16,6 +16,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const fiveHourRem = document.getElementById('five-hour-rem');
   const fiveHourRef = document.getElementById('five-hour-ref');
   
+  // Argon elements
+  const argonWeeklyPct = document.getElementById('argon-weekly-pct');
+  const argonWeeklyBar = document.getElementById('argon-weekly-bar');
+  const argonWeeklyRem = document.getElementById('argon-weekly-rem');
+  const argonWeeklyRef = document.getElementById('argon-weekly-ref');
+  
   // Buttons
   const refreshBtn = document.getElementById('refresh-btn');
   const retryBtn = document.getElementById('retry-btn');
@@ -67,6 +73,18 @@ document.addEventListener('DOMContentLoaded', () => {
       fiveHourRem.textContent = gFiveHourRem;
       fiveHourRef.textContent = `Refreshes in ${gFiveHourRef}`;
       setBarColor(fiveHourBar, gFiveHourPct);
+      
+      const aWeeklyPct = data.argon_weekly_percentage !== undefined ? data.argon_weekly_percentage : 100.0;
+      const aWeeklyRem = data.argon_weekly_remaining || 'Quota Available';
+      const aWeeklyRef = data.argon_weekly_refresh || '--';
+      
+      if (argonWeeklyPct) {
+        argonWeeklyPct.textContent = `${aWeeklyPct.toFixed(1)}%`;
+        argonWeeklyBar.style.width = `${aWeeklyPct}%`;
+        argonWeeklyRem.textContent = aWeeklyRem;
+        argonWeeklyRef.textContent = `Refreshes in ${aWeeklyRef}`;
+        setBarColor(argonWeeklyBar, aWeeklyPct);
+      }
       
       if (data.last_updated) {
         const date = new Date(data.last_updated * 1000);
