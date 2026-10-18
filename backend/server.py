@@ -664,12 +664,13 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         }
 
         .chart-section {
-            background: var(--card-bg);
-            border: 1px solid var(--card-border);
+            background: #0b0f19;
+            border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 1rem;
             padding: 1.5rem;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
             margin-bottom: 2rem;
+            position: relative;
         }
 
         .chart-header {
@@ -698,8 +699,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         /* Time Range Selector Buttons */
         .time-selector {
             display: flex;
-            background: rgba(15, 23, 42, 0.6);
-            border: 1px solid var(--card-border);
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.1);
             border-radius: 0.5rem;
             padding: 2px;
             gap: 2px;
@@ -719,19 +720,78 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 
         .time-btn:hover {
             color: var(--text-main);
-            background: rgba(255, 255, 255, 0.05);
+            background: rgba(255, 255, 255, 0.08);
         }
 
         .time-btn.active {
-            background: var(--accent-gemini);
-            color: #0f172a;
-            box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
+            background: #2563eb;
+            color: #ffffff;
+            box-shadow: 0 0 10px rgba(37, 99, 235, 0.5);
         }
 
         .chart-container {
             position: relative;
-            height: 340px;
+            height: 380px;
             width: 100%;
+        }
+
+        /* Grafana-style Interactive Legend & Series Stats */
+        .grafana-legend-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem 1.25rem;
+            margin-top: 1.25rem;
+            padding-top: 1rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+            justify-content: center;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.8rem;
+            color: #94a3b8;
+            cursor: pointer;
+            user-select: none;
+            padding: 4px 10px;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            transition: all 0.2s ease;
+        }
+
+        .legend-item:hover {
+            background: rgba(255, 255, 255, 0.07);
+            border-color: rgba(255, 255, 255, 0.15);
+            color: #f8fafc;
+        }
+
+        .legend-item.hidden-series {
+            opacity: 0.35;
+            text-decoration: line-through;
+            border-color: transparent;
+        }
+
+        .legend-color-indicator {
+            width: 16px;
+            height: 4px;
+            border-radius: 2px;
+        }
+
+        .legend-color-indicator.dashed {
+            background: repeating-linear-gradient(90deg, currentColor 0, currentColor 4px, transparent 4px, transparent 8px);
+        }
+
+        .legend-name {
+            font-weight: 500;
+        }
+
+        .legend-stat {
+            font-weight: 700;
+            color: #f8fafc;
+            font-variant-numeric: tabular-nums;
+            margin-left: 2px;
         }
 
         footer {
@@ -875,6 +935,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             <div class="chart-container">
                 <canvas id="trendChart"></canvas>
             </div>
+            <div id="grafana-legend" class="grafana-legend-container"></div>
         </div>
 
         <footer>
@@ -978,6 +1039,103 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             renderChart(cachedHistory);
         }
 
+        function createVerticalGradient(ctx, chartArea, r, g, b, topAlpha = 0.28) {
+            if (!chartArea) return `rgba(${r}, ${g}, ${b}, ${topAlpha})`;
+            const gradient = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+            gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${topAlpha})`);
+            gradient.addColorStop(0.75, `rgba(${r}, ${g}, ${b}, 0.04)`);
+            gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
+            return gradient;
+        }
+
+        const grafanaPlugins = [
+            {
+                id: 'thresholdLines',
+                beforeDraw: (chart) => {
+                    const { ctx, chartArea, scales: { y } } = chart;
+                    if (!chartArea || !y) return;
+
+                    const drawThreshold = (val, color, label) => {
+                        const yPos = y.getPixelForValue(val);
+                        if (yPos < chartArea.top || yPos > chartArea.bottom) return;
+
+                        ctx.save();
+                        ctx.strokeStyle = color;
+                        ctx.lineWidth = 1;
+                        ctx.setLineDash([5, 4]);
+                        ctx.beginPath();
+                        ctx.moveTo(chartArea.left, yPos);
+                        ctx.lineTo(chartArea.right, yPos);
+                        ctx.stroke();
+
+                        ctx.fillStyle = color;
+                        ctx.font = '10px Inter, -apple-system, sans-serif';
+                        ctx.textAlign = 'right';
+                        ctx.fillText(label, chartArea.right - 4, yPos - 4);
+                        ctx.restore();
+                    };
+
+                    drawThreshold(80, 'rgba(245, 158, 11, 0.7)', '80% WARN');
+                    drawThreshold(90, 'rgba(239, 68, 68, 0.8)', '90% CRIT');
+                }
+            },
+            {
+                id: 'crosshairLine',
+                afterDraw: (chart) => {
+                    if (chart.tooltip && chart.tooltip._active && chart.tooltip._active.length) {
+                        const activePoint = chart.tooltip._active[0];
+                        const { ctx, chartArea } = chart;
+                        const x = activePoint.element.x;
+
+                        ctx.save();
+                        ctx.beginPath();
+                        ctx.moveTo(x, chartArea.top);
+                        ctx.lineTo(x, chartArea.bottom);
+                        ctx.lineWidth = 1;
+                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+                        ctx.setLineDash([3, 3]);
+                        ctx.stroke();
+                        ctx.restore();
+                    }
+                }
+            }
+        ];
+
+        function updateGrafanaLegend(chart, datasets) {
+            const legendEl = document.getElementById('grafana-legend');
+            if (!legendEl) return;
+            legendEl.innerHTML = '';
+
+            datasets.forEach((ds, idx) => {
+                const item = document.createElement('div');
+                item.className = 'legend-item' + (!chart.isDatasetVisible(idx) ? ' hidden-series' : '');
+                
+                const points = ds.data || [];
+                const latest = points.length > 0 ? points[points.length - 1].y : 0;
+                let max = 0;
+                points.forEach(p => { if (p.y > max) max = p.y; });
+
+                const isDashed = ds.borderDash && ds.borderDash.length > 0;
+                const indClass = isDashed ? 'legend-color-indicator dashed' : 'legend-color-indicator';
+
+                item.innerHTML = `
+                    <span class="${indClass}" style="background-color: ${ds.borderColor}; color: ${ds.borderColor};"></span>
+                    <span class="legend-name">${ds.label}</span>
+                    <span class="legend-stat">${latest.toFixed(1)}%</span>
+                    <span style="color: #64748b; font-size: 0.75rem; margin-left: 2px;">(max ${max.toFixed(1)}%)</span>
+                `;
+
+                item.onclick = () => {
+                    const isVisible = chart.isDatasetVisible(idx);
+                    chart.setDatasetVisibility(idx, !isVisible);
+                    chart.update();
+                    item.classList.toggle('hidden-series', isVisible);
+                };
+
+                legendEl.appendChild(item);
+            });
+        }
+
         function renderChart(historyData) {
             try {
                 const now = Math.floor(Date.now() / 1000);
@@ -1028,143 +1186,188 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                     chartInstance.destroy();
                 }
 
-            chartInstance = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    datasets: [
-                        {
-                            label: 'Gemini Weekly Used %',
-                            data: gWeeklyPoints,
-                            borderColor: '#38bdf8',
-                            backgroundColor: 'rgba(56, 189, 248, 0.15)',
-                            fill: true,
-                            tension: 0.2,
-                            borderWidth: 2.5,
-                            pointRadius: filtered.length > 50 ? 1 : 4,
-                            pointHoverRadius: 6
-                        },
-                        {
-                            label: 'Gemini 5-Hour Used %',
-                            data: gFiveHourPoints,
-                            borderColor: '#818cf8',
-                            backgroundColor: 'transparent',
-                            borderDash: [4, 4],
-                            tension: 0.2,
-                            borderWidth: 2,
-                            pointRadius: filtered.length > 50 ? 1 : 4,
-                            pointHoverRadius: 6
-                        },
-                        {
-                            label: 'Claude Weekly Used %',
-                            data: cWeeklyPoints,
-                            borderColor: '#a855f7',
-                            backgroundColor: 'rgba(168, 85, 247, 0.15)',
-                            fill: true,
-                            tension: 0.2,
-                            borderWidth: 2.5,
-                            pointRadius: filtered.length > 50 ? 1 : 4,
-                            pointHoverRadius: 6
-                        },
-                        {
-                            label: 'Claude 5-Hour Used %',
-                            data: cFiveHourPoints,
-                            borderColor: '#ec4899',
-                            backgroundColor: 'transparent',
-                            borderDash: [4, 4],
-                            tension: 0.2,
-                            borderWidth: 2,
-                            pointRadius: filtered.length > 50 ? 1 : 4,
-                            pointHoverRadius: 6
-                        },
-                        {
-                            label: 'Argon Weekly Used %',
-                            data: aWeeklyPoints,
-                            borderColor: '#06b6d4',
-                            backgroundColor: 'rgba(6, 182, 212, 0.15)',
-                            fill: false,
-                            tension: 0.2,
-                            borderWidth: 2.5,
-                            pointRadius: filtered.length > 50 ? 1 : 4,
-                            pointHoverRadius: 6
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    animation: {
-                        duration: 300
+                const datasets = [
+                    {
+                        label: 'Gemini Weekly',
+                        data: gWeeklyPoints,
+                        borderColor: '#38bdf8',
+                        backgroundColor: (context) => createVerticalGradient(context.chart.ctx, context.chart.chartArea, 56, 189, 248, 0.25),
+                        fill: 'origin',
+                        tension: 0.25,
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        pointHoverRadius: 5,
+                        pointHoverBackgroundColor: '#38bdf8',
+                        pointHoverBorderColor: '#ffffff',
+                        pointHoverBorderWidth: 2
                     },
-                    interaction: {
-                        mode: 'nearest',
-                        axis: 'x',
-                        intersect: false,
+                    {
+                        label: 'Gemini 5-Hour',
+                        data: gFiveHourPoints,
+                        borderColor: '#818cf8',
+                        backgroundColor: 'transparent',
+                        borderDash: [5, 4],
+                        fill: false,
+                        tension: 0.25,
+                        borderWidth: 1.8,
+                        pointRadius: 0,
+                        pointHoverRadius: 5,
+                        pointHoverBackgroundColor: '#818cf8',
+                        pointHoverBorderColor: '#ffffff',
+                        pointHoverBorderWidth: 2
                     },
-                    scales: {
-                        x: {
-                            type: 'linear',
-                            min: startTime * 1000,
-                            max: now * 1000,
-                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
-                            ticks: {
-                                color: '#94a3b8',
-                                maxTicksLimit: currentRange === '1H' ? 6 : (currentRange === '6H' ? 7 : (currentRange === '24H' ? 8 : 7)),
-                                callback: function(val) {
-                                    const d = new Date(val);
-                                    if (isNaN(d.getTime())) return '';
-                                    if (currentRange === '7D' || (currentRange === 'ALL' && (now - startTime) > 86400)) {
-                                        return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours().toString().padStart(2, '0')}:00`;
+                    {
+                        label: 'Claude Weekly',
+                        data: cWeeklyPoints,
+                        borderColor: '#c084fc',
+                        backgroundColor: (context) => createVerticalGradient(context.chart.ctx, context.chart.chartArea, 192, 132, 252, 0.25),
+                        fill: 'origin',
+                        tension: 0.25,
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        pointHoverRadius: 5,
+                        pointHoverBackgroundColor: '#c084fc',
+                        pointHoverBorderColor: '#ffffff',
+                        pointHoverBorderWidth: 2
+                    },
+                    {
+                        label: 'Claude 5-Hour',
+                        data: cFiveHourPoints,
+                        borderColor: '#f472b6',
+                        backgroundColor: 'transparent',
+                        borderDash: [5, 4],
+                        fill: false,
+                        tension: 0.25,
+                        borderWidth: 1.8,
+                        pointRadius: 0,
+                        pointHoverRadius: 5,
+                        pointHoverBackgroundColor: '#f472b6',
+                        pointHoverBorderColor: '#ffffff',
+                        pointHoverBorderWidth: 2
+                    },
+                    {
+                        label: 'Argon Weekly',
+                        data: aWeeklyPoints,
+                        borderColor: '#10b981',
+                        backgroundColor: (context) => createVerticalGradient(context.chart.ctx, context.chart.chartArea, 16, 185, 129, 0.22),
+                        fill: 'origin',
+                        tension: 0.25,
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        pointHoverRadius: 5,
+                        pointHoverBackgroundColor: '#10b981',
+                        pointHoverBorderColor: '#ffffff',
+                        pointHoverBorderWidth: 2
+                    }
+                ];
+
+                chartInstance = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        datasets: datasets
+                    },
+                    plugins: grafanaPlugins,
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        animation: {
+                            duration: 350
+                        },
+                        interaction: {
+                            mode: 'index',
+                            intersect: false,
+                        },
+                        scales: {
+                            x: {
+                                type: 'linear',
+                                min: startTime * 1000,
+                                max: now * 1000,
+                                grid: {
+                                    color: 'rgba(255, 255, 255, 0.04)',
+                                    drawBorder: false
+                                },
+                                ticks: {
+                                    color: '#64748b',
+                                    font: { family: 'Inter', size: 11 },
+                                    maxTicksLimit: currentRange === '1H' ? 6 : (currentRange === '6H' ? 7 : (currentRange === '24H' ? 8 : 7)),
+                                    callback: function(val) {
+                                        const d = new Date(val);
+                                        if (isNaN(d.getTime())) return '';
+                                        if (currentRange === '7D' || (currentRange === 'ALL' && (now - startTime) > 86400)) {
+                                            return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours().toString().padStart(2, '0')}:00`;
+                                        }
+                                        return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
                                     }
-                                    return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+                                }
+                            },
+                            y: {
+                                min: 0,
+                                max: 100,
+                                grid: {
+                                    color: 'rgba(255, 255, 255, 0.04)',
+                                    drawBorder: false
+                                },
+                                ticks: {
+                                    color: '#64748b',
+                                    font: { family: 'Inter', size: 11 },
+                                    stepSize: 20,
+                                    callback: function(val) { return val + '%'; }
                                 }
                             }
                         },
-                        y: {
-                            min: 0,
-                            max: 100,
-                            title: {
-                                display: true,
-                                text: 'Quota Used (%)',
-                                color: '#94a3b8'
+                        plugins: {
+                            legend: {
+                                display: false // Replaced with Grafana interactive legend below
                             },
-                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
-                            ticks: {
-                                color: '#94a3b8',
-                                callback: function(val) { return val + '%'; }
-                            }
-                        }
-                    },
-                    plugins: {
-                        legend: {
-                            labels: { color: '#f8fafc', font: { family: 'Inter' } }
-                        },
-                        tooltip: {
-                            backgroundColor: '#1e293b',
-                            titleColor: '#f8fafc',
-                            bodyColor: '#94a3b8',
-                            borderColor: '#334155',
-                            borderWidth: 1,
-                            callbacks: {
-                                title: function(items) {
-                                    if (!items.length) return '';
-                                    const xVal = (items[0].parsed && items[0].parsed.x !== undefined) ? items[0].parsed.x : (items[0].raw ? items[0].raw.x : null);
-                                    if (!xVal) return '';
-                                    const d = new Date(xVal);
-                                    return isNaN(d.getTime()) ? '' : d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+                            tooltip: {
+                                enabled: true,
+                                backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                                titleColor: '#94a3b8',
+                                titleFont: { size: 11, weight: '500' },
+                                bodyFont: { size: 12, weight: '600' },
+                                borderColor: 'rgba(255, 255, 255, 0.12)',
+                                borderWidth: 1,
+                                padding: 12,
+                                cornerRadius: 8,
+                                displayColors: true,
+                                boxWidth: 8,
+                                boxHeight: 8,
+                                usePointStyle: true,
+                                itemSort: (a, b) => {
+                                    const aVal = (a.parsed && a.parsed.y !== undefined) ? a.parsed.y : (a.raw ? a.raw.y : 0);
+                                    const bVal = (b.parsed && b.parsed.y !== undefined) ? b.parsed.y : (b.raw ? b.raw.y : 0);
+                                    return bVal - aVal;
                                 },
-                                label: function(context) {
-                                    const yVal = (context.parsed && context.parsed.y !== undefined) ? context.parsed.y : (context.raw ? context.raw.y : 0);
-                                    return `${context.dataset.label}: ${Number(yVal).toFixed(1)}% Used`;
+                                callbacks: {
+                                    title: function(items) {
+                                        if (!items.length) return '';
+                                        const xVal = (items[0].parsed && items[0].parsed.x !== undefined) ? items[0].parsed.x : (items[0].raw ? items[0].raw.x : null);
+                                        if (!xVal) return '';
+                                        const d = new Date(xVal);
+                                        return isNaN(d.getTime()) ? '' : d.toLocaleString('en-US', {
+                                            month: 'short',
+                                            day: 'numeric',
+                                            hour: '2-digit',
+                                            minute: '2-digit',
+                                            second: '2-digit',
+                                            hour12: false
+                                        });
+                                    },
+                                    label: function(context) {
+                                        const yVal = (context.parsed && context.parsed.y !== undefined) ? context.parsed.y : (context.raw ? context.raw.y : 0);
+                                        return ` ${context.dataset.label}: ${Number(yVal).toFixed(1)}%`;
+                                    }
                                 }
                             }
                         }
                     }
-                }
-            });
-        } catch (err) {
-            console.error("Failed to render chart:", err);
+                });
+
+                updateGrafanaLegend(chartInstance, datasets);
+            } catch (err) {
+                console.error("Failed to render chart:", err);
+            }
         }
-    }
 
         async function fetchHistoryAndRenderChart() {
             try {
